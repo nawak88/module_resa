@@ -1,0 +1,13 @@
+{
+    "name": "Resa",
+    "alias": "resa",
+    "description": "Module permettant de réserver des salles de travail",
+    "keywords": [],
+    "priority": 0,
+    "providers": [
+        "Modules\\Resa\\Providers\\ResaServiceProvider",
+        "Modules\\Resa\\Providers\\Filament\\FilamentPanelProvider"
+
+    ],
+    "files": []
+}
