@@ -12,37 +12,27 @@ return new class extends Migration
 {
     
     use HasTablePrefix;
-
-    
     /**
      * Run the migrations.
      */
     public function up(): void
     {
-        
+       
+
         if (DB::connection() instanceof PostgresConnection) {
             $default_value = DB::raw('(gen_random_uuid())');
         } elseif (DB::connection() instanceof MySqlConnection) {
             $default_value = DB::raw('(UUID())');
         }
-        
-        Schema::create($this->prefix .'salles', function (Blueprint $table)  use ($default_value) {
+
+        Schema::create($this->prefix .'type_postes',  function (Blueprint $table)  use ($default_value) {
             $table->id();
             $table->uuid('uuid')->default($default_value);
-            $table->string('code')->nullable();
             $table->string('libelle_court', 500)->nullable();
             $table->text('libelle_long')->nullable();
-            $table->integer('capacite')->nullable();
-            $table->string('image')->nullable(); 
-            $table->string('color')->nullable();
             $table->integer('ordre')->default(0);
-            $table->json('data')->nullable();
             $table->timestamps();
         });
-        
-        
-        
-
     }
 
     /**
@@ -50,7 +40,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-       
-        Schema::dropIfExists($this->prefix .'salles');
+        Schema::dropIfExists($this->prefix .'type_postes');
     }
 };

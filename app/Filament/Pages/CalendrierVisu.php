@@ -13,6 +13,8 @@ class CalendrierVisu extends Page
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-calendar-days';
     protected static ?string $navigationLabel = 'Calendrier';
     protected string $view = 'resa::filament.pages.calendrier-visu';
+    protected static string|\UnitEnum|null $navigationGroup = 'Gestion';
+    protected static ?int                    $navigationSort  = 4;
 
     public static function canAccess(): bool
     {
@@ -32,6 +34,8 @@ class CalendrierVisu extends Page
             ],
         ];
     }
+
+    
 }
 
 

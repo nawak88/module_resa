@@ -14,9 +14,14 @@ class ResaDatabaseSeeder extends Seeder
         $this->call([    
             SettingSeeder::class,
             
-            
+            TypePosteSeeder::class,
+            TypeSalleSeeder::class,
+            TypeCapaciteSeeder::class,
             SalleSeeder::class,
-            
+            SallePosteSeeder::class,
+            PosteCapaciteSeeder::class,
+
+        
            
 
             PermissionsSeeder::class,

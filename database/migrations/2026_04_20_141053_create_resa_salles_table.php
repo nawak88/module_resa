@@ -12,6 +12,7 @@ return new class extends Migration
 {
     
     use HasTablePrefix;
+
     
     /**
      * Run the migrations.
@@ -25,38 +26,25 @@ return new class extends Migration
             $default_value = DB::raw('(UUID())');
         }
         
-        
-        
-        
-        Schema::create($this->prefix .'reservations', function (Blueprint $table) use ($default_value) {
+        Schema::create($this->prefix .'salles', function (Blueprint $table)  use ($default_value) {
             $table->id();
             $table->uuid('uuid')->default($default_value);
+            $table->string('code')->nullable();
             $table->string('libelle_court', 500)->nullable();
             $table->text('libelle_long')->nullable();
-           
-            $table->dateTime('debut');
-            $table->dateTime('fin');
-            
-            $table->string('couleur')->nullable();
-            $table->integer('validation')->default(0);
+            $table->foreignId('type_salle_id')
+                  ->constrained($this->prefix .'type_salles')
+                  ->restrictOnDelete();
+            $table->integer('capacite')->nullable();
+            $table->string('image')->nullable(); 
+            $table->string('color')->nullable();
+            $table->integer('ordre')->default(0);
             $table->json('data')->nullable();
-           
             $table->timestamps();
-
-           // Liaisons
-           $table->foreignId('salle_id')->constrained($this->prefix .'salles')->onDelete('cascade');
-           //$table->foreignId('rh_marin_id')->constrained('rh_marins')->onDelete('cascade');
-           
-           $table->unsignedBigInteger('rh_marin_id')->nullable();
-           $table->foreign('rh_marin_id')->references('id')->on('rh_marins')->onDelete('cascade');
-
-           // Champ Inputs pour inscription sans compte
-           $table->string('email')->nullable();
-           $table->string('display_name')->nullable();
-           $table->string('nid', 15)->nullable();
-
-
         });
+        
+        
+        
 
     }
 
@@ -65,7 +53,7 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists($this->prefix .'reservations');
        
+        Schema::dropIfExists($this->prefix .'salles');
     }
 };

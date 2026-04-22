@@ -61,6 +61,11 @@ class ResaServiceProvider extends ServiceProvider
         $policies = [
             Models\Salle::class => Policies\SallePolicy::class,
             Models\Reservation::class => Policies\ReservationPolicy::class,
+            Models\SallePoste::class => Policies\SallePostePolicy::class,
+            Models\TypePoste::class => Policies\TypePostePolicy::class,
+            Models\TypeSalle::class => Policies\TypeSallePolicy::class,
+            Models\TypeCapacite::class => Policies\TypeCapacitePolicy::class,
+            Models\PosteCapacite::class => Policies\PosteCapacitePolicy::class,
         ];
 
         foreach ($policies as $model => $policy) {

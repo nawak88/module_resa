@@ -97,6 +97,7 @@ class FilamentPanelProvider extends PanelProvider
             ->authMiddleware([
                 #Authenticate::class,
             ])
+            ->topNavigation()
             ->sidebarCollapsibleOnDesktop()
             ->maxContentWidth(Width::Full);
     }

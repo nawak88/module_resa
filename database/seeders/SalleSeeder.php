@@ -3,41 +3,32 @@
 namespace Modules\Resa\Database\Seeders;
 
 use Illuminate\Database\Seeder;
-
 use Modules\Resa\Models\Salle;
+use Modules\Resa\Models\TypeSalle;
 
 class SalleSeeder extends Seeder
 {
-    /**
-     * Run the database seeds.
-     *
-     * @return void
-     */
-    public function run()
+    public function run(): void
     {
-        
-        Salle::firstOrCreate([
-            "code" => "S1",
-            "libelle_court" => "Salle 1",
-            "libelle_long" => "Salle Virtuel 1 FPS",
-        ]);
+        $drone = TypeSalle::where('libelle_court', 'Simulateur drone')->firstOrFail();
 
-        Salle::firstOrCreate([
-            "code" => "S2",
-            "libelle_court" => "Salle 2",
-            "libelle_long" => "Salle Virtuel 2 FPS",
-        ]);
-        
-        Salle::firstOrCreate([
-            "code" => "S3",
-            "libelle_court" => "Salle 3",
-            "libelle_long" => "Salle Virtuel 3 FPS",
-        ]);
+        $salles = [
+            [
+                'libelle_court' => 'Salle 1',
+                'libelle_long'  => 'Salle principale de simulation drone',
+                'type_salle_id' => $drone->id,
+                'code'          => 'S1',
+                'capacite'      => 4,
+                'color'         => 'primary',
+                'ordre'         => 1,
+            ],
+        ];
 
-        Salle::firstOrCreate([
-            "code" => "S4",
-            "libelle_court" => "Salle 4",
-            "libelle_long" => "Salle Virtuel 4 FPS",
-        ]);
+        foreach ($salles as $data) {
+            Salle::firstOrCreate(
+                ['libelle_court' => $data['libelle_court']],
+                $data
+            );
+        }
     }
 }

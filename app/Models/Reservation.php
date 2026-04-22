@@ -1,61 +1,124 @@
 <?php
+
 namespace Modules\Resa\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Guava\Calendar\Contracts\Eventable;
 use Guava\Calendar\ValueObjects\CalendarEvent;
 use Modules\Resa\Traits\HasTablePrefix;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Modules\RH\Models\Marin as RHMarin;
-
+use Modules\RH\Models\User;
 
 class Reservation extends Model implements Eventable
 {
-
     use HasTablePrefix;
 
     protected $fillable = [
-        'libelle_court', 
-        'salle_id', 
-        'debut', 
-        'fin', 
-        'libelle_long', 
-        'couleur', 
+        'uuid',
+        'user_id',
+        'salle_poste_id',
+        'libelle_court',
+        'libelle_long',
+        'debut',
+        'fin',
+        'couleur',
         'validation',
-        'rh_marin_id', 
-        'data', 
-        'display_name',
-        'email',
-        'nid'
+        'capacites_utilisees',
+        'validated_by',
+        'validated_at',
+        'data',
     ];
 
     protected $casts = [
-        'debut' => 'datetime',
-        'fin' => 'datetime',
-        'data' => 'array',
+        'debut'               => 'datetime',
+        'fin'                 => 'datetime',
+        'validated_at'        => 'datetime',
+        'validation'          => 'integer',
+        'capacites_utilisees' => 'array',
+        'data'                => 'array',
     ];
 
-    public function salle()
+    /* ── Constantes ───────────────────────────────────── */
+
+    const EN_ATTENTE = 0;
+    const VALIDE     = 1;
+
+    /* ── Relations ────────────────────────────────────── */
+
+    public function user(): BelongsTo
     {
-        return $this->belongsTo(Salle::class);
+        return $this->belongsTo(User::class, 'user_id');
     }
 
-    public function rhMarin(): BelongsTo
+    public function sallePoste(): BelongsTo
     {
-        return $this->belongsTo(RHMarin::class, 'rh_marin_id');
+        return $this->belongsTo(SallePoste::class, 'salle_poste_id');
     }
 
-    // Implémentation de Eventable
+    public function validatedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'validated_by');
+    }
+
+    /* ── Scopes ───────────────────────────────────────── */
+
+    public function scopeValide($query)
+    {
+        return $query->where('validation', self::VALIDE);
+    }
+
+    public function scopeEnAttente($query)
+    {
+        return $query->where('validation', self::EN_ATTENTE);
+    }
+
+    /* ── Méthodes métier ──────────────────────────────── */
+
+    public function isValide(): bool
+    {
+        return $this->validation === self::VALIDE;
+    }
+
+    public function isEnAttente(): bool
+    {
+        return $this->validation === self::EN_ATTENTE;
+    }
+
+    public function valider($admin): void
+    {
+        $this->update([
+            'validation'   => self::VALIDE,
+            'validated_by' => $admin->id,
+            'validated_at' => now(),
+        ]);
+    }
+
+    public function invalider(): void
+    {
+        $this->update([
+            'validation'   => self::EN_ATTENTE,
+            'validated_by' => null,
+            'validated_at' => null,
+        ]);
+    }
+
+    /* ── Guava Calendar — Eventable ───────────────────── */
+
     public function toCalendarEvent(): CalendarEvent
     {
+        $backgroundColor = $this->isValide() ? '#22c55e' : '#9ca3af';
+
         return CalendarEvent::make($this)
-            ->title($this->libelle_court)
-            ->start($this->debut)
-            ->end($this->fin)
-            ->resourceId($this->salle_id) // Lien avec la ressource (salle)
-            ->backgroundColor($this->couleur ?? '#3b82f6')
+            ->title($this->libelle_court ?? '')
+            ->start($this->debut?->format('Y-m-d H:i:s'))
+            ->end($this->fin?->format('Y-m-d H:i:s'))
+            ->resourceId($this->salle_poste_id)
+            ->backgroundColor($backgroundColor)
+            ->extendedProp('validation', $this->validation)
             ->extendedProp('description', $this->libelle_long)
-            //->extendedProp('marin', $this->rhMarin?->nom)
-            ->action('view'); // Action au clic (view, edit, etc.)
+            ->extendedProp('capacites', $this->capacites_utilisees ?? [])
+            ->editable(! $this->isValide() && auth()->id() === $this->user_id)
+            ;
     }
 }
