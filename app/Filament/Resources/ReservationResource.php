@@ -30,7 +30,7 @@ use Modules\Resa\Models\Reservation;
 use Modules\Resa\Models\Salle;
 use Modules\Resa\Models\SallePoste;
 use Modules\Resa\Models\TypeCapacite;
-use Modules\RH\Models\User;
+use App\Models\User;
 
 class ReservationResource extends Resource
 {

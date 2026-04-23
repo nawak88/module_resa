@@ -2,15 +2,17 @@
 
 ## Presentation
 
-Le module **Resa** permet la reservation de postes simulateur dans des salles equipees. Il est integre au serveur **Poseidon** via Skeletor (Laravel + Filament PHP) et utilise **Guava Calendar** pour l'interface calendrier.
+Le module **Resa** permet la reservation de salles et postes simulateur. Il est integre au serveur **Poseidon** via Skeletor (Laravel + Filament PHP) et utilise **Guava Calendar** pour l'interface calendrier.
 
 ---
 
 ## Contexte
 
-La Force d'Action Navale dispose de salles de simulation equipees de postes specialises. Chaque poste propose un ensemble de **capacites** (FPV, 20mm, Bob...). Un utilisateur reserve un creneau en precisant les capacites dont il a besoin - le systeme lui presente les postes compatibles et disponibles, et il choisit lui-meme.
+La Force d'Action Navale dispose de salles de simulation equipees de postes specialises et de salles classiques polyvalentes.
 
-**Situation actuelle :** une seule salle, 4 postes. L'architecture est prevue pour accueillir de nouvelles salles sans modification structurelle.
+**Salles simulateur** : chaque poste propose des capacites (FPV, 20mm, Bob...). Un utilisateur reserve un creneau en precisant les capacites dont il a besoin — le systeme lui presente les postes compatibles et il choisit.
+
+**Salles classiques** : reservation de la salle entiere sur un creneau. La capacite de la salle (nombre de personnes) est indicative.
 
 ---
 
@@ -19,7 +21,7 @@ La Force d'Action Navale dispose de salles de simulation equipees de postes spec
 | Acteur | Role |
 |---|---|
 | Visiteur non connecte | Consulte le calendrier en lecture seule |
-| Utilisateur connecte | Reserve un creneau en choisissant ses capacites puis son poste |
+| Utilisateur connecte | Reserve un creneau selon le mode de la salle |
 | Admin | Valide, modifie, cree des reservations pour des tiers |
 
 ---
@@ -28,26 +30,54 @@ La Force d'Action Navale dispose de salles de simulation equipees de postes spec
 
 | Couche | Technologie |
 |---|---|
-| Backend | Skeletor : Laravel + Filament PHP |
+| Backend | Skeletor : Laravel + Filament PHP v4 |
 | Frontend | Livewire JS + Blade |
-| Calendrier | Guava Calendar CalendarWidget |
+| Calendrier | Guava Calendar v2.1.1 CalendarWidget |
 | Serveur | Poseidon |
 | Base de donnees | MySQL fanlabdb |
 
 ---
 
-## Parcours visiteur
+## Navigation multi-niveaux
 
-Le visiteur accede au calendrier sans connexion.
+```
+Demarrage
+    │
+    ├── 1 seule salle au total
+    │       → Calendrier direct (mode selon TypeSalle)
+    │
+    ├── Plusieurs salles, 1 seul TypeSalle
+    │       → Liste des salles directement
+    │           → Calendrier
+    │
+    └── Plusieurs TypeSalles
+            → Choix du TypeSalle
+                → Liste des salles du type choisi
+                    → Calendrier
+```
 
-- Il voit toutes les reservations validees de la salle
-- Les colonnes representent les postes
-- Les evenements representent les creneaux occupes
-- Il ne peut pas reserver - un bouton Se connecter est affiche
+La navigation est resolue automatiquement dans `mount()` via `resoudreNavigation()`.
 
 ---
 
-## Parcours utilisateur connecte
+## Deux modes de reservation
+
+### Mode Simulateur
+
+- Calendrier avec colonnes = postes
+- Wizard 3 etapes : creneau + capacites → choix poste → infos
+- Filtres par poste et capacite disponibles
+
+### Mode Classique
+
+- Calendrier sans colonnes (vue simple)
+- Wizard 2 etapes : creneau → infos
+- Verification : salle libre sur ce creneau ?
+- Un seul occupant a la fois — la capacite est indicative
+
+---
+
+## Parcours utilisateur — Mode Simulateur
 
 ```mermaid
 flowchart TD
@@ -62,19 +92,6 @@ flowchart TD
     I --> J{"Creneau libre ?"}
     J -- "non" --> K(["Creneau indisponible"])
     J -- "oui" --> L(["Reservation creee en attente"])
-
-    style A fill:#D3D1C7,stroke:#5F5E5A,color:#2C2C2A
-    style B fill:#D3D1C7,stroke:#5F5E5A,color:#2C2C2A
-    style C fill:#9FE1CB,stroke:#0F6E56,color:#04342C
-    style D fill:#9FE1CB,stroke:#0F6E56,color:#04342C
-    style E fill:#9FE1CB,stroke:#0F6E56,color:#04342C
-    style F fill:#FAC775,stroke:#854F0B,color:#412402
-    style G fill:#F7C1C1,stroke:#A32D2D,color:#501313
-    style H fill:#9FE1CB,stroke:#0F6E56,color:#04342C
-    style I fill:#9FE1CB,stroke:#0F6E56,color:#04342C
-    style J fill:#FAC775,stroke:#854F0B,color:#412402
-    style K fill:#F7C1C1,stroke:#A32D2D,color:#501313
-    style L fill:#C0DD97,stroke:#3B6D11,color:#173404
 ```
 
 ### Algorithme de selection du poste
@@ -86,7 +103,21 @@ flowchart TD
 | Poste 3 | 20mm | 1/2 | oui | partiel manque FPV |
 | Poste 4 | FPV, 20mm, Bob | 2/2 | non | non affiche |
 
-Les postes avec score 0 ne sont pas proposes. Si aucun poste n'est disponible pour les capacites demandees, un message d'indisponibilite est affiche.
+Les postes avec score 0 ne sont pas proposes. Si aucun poste n'est disponible, un message d'indisponibilite est affiche.
+
+---
+
+## Parcours utilisateur — Mode Classique
+
+```mermaid
+flowchart TD
+    A(["Connexion"]) --> B(["Calendrier de la salle"])
+    B --> C["Selectionne un creneau"]
+    C --> D{"Salle libre ?"}
+    D -- "non" --> E(["Salle deja reservee"])
+    D -- "oui" --> F["Remplit le formulaire"]
+    F --> G(["Reservation creee en attente"])
+```
 
 ---
 
@@ -97,29 +128,13 @@ flowchart TD
     A(["Acces calendrier admin"]) --> B["Toutes les reservations"]
     B --> C{"Action choisie"}
     C -- "valider" --> D["Clic reservation en attente"]
-    D --> E["Menu Voir Modifier Valider"]
+    D --> E["Modal voir + bouton Valider"]
     E --> F(["Reservation validee"])
     C -- "reserver pour tiers" --> G["Choisit capacites et poste"]
     G --> H["Selectionne un utilisateur"]
-    H --> I{"User existe"}
-    I -- "non" --> J["Creer via Skeletor"]
-    J --> K(["Reservation creee validee"])
-    I -- "oui" --> K
-    F --> L(["refreshRecords"])
-    K --> L
-
-    style A fill:#D3D1C7,stroke:#5F5E5A,color:#2C2C2A
-    style B fill:#CECBF6,stroke:#534AB7,color:#26215C
-    style C fill:#FAC775,stroke:#854F0B,color:#412402
-    style D fill:#F5C4B3,stroke:#993C1D,color:#4A1B0C
-    style E fill:#F5C4B3,stroke:#993C1D,color:#4A1B0C
-    style F fill:#C0DD97,stroke:#3B6D11,color:#173404
-    style G fill:#F5C4B3,stroke:#993C1D,color:#4A1B0C
-    style H fill:#F5C4B3,stroke:#993C1D,color:#4A1B0C
-    style I fill:#FAC775,stroke:#854F0B,color:#412402
-    style J fill:#F7C1C1,stroke:#A32D2D,color:#501313
-    style K fill:#C0DD97,stroke:#3B6D11,color:#173404
-    style L fill:#9FE1CB,stroke:#0F6E56,color:#04342C
+    H --> I(["Reservation creee validee"])
+    F --> J(["refreshRecords"])
+    I --> J
 ```
 
 ### Actions disponibles
@@ -127,11 +142,10 @@ flowchart TD
 | Action | Condition |
 |---|---|
 | Voir le detail | Toujours |
-| Valider | Permission resa::validation_salle + en attente |
-| Invalider | Permission resa::validation_salle + validee |
-| Modifier | En attente uniquement |
-| Supprimer | En attente uniquement |
-| Reserver pour un tiers | Permission resa::reservation.view |
+| Valider | Permission `resa::validation_salle` + en attente |
+| Invalider | Permission `resa::validation_salle` + validee |
+| Supprimer | En attente uniquement (admin : toujours) |
+| Reserver pour un tiers | Permission `resa::reservation.view` |
 
 ---
 
@@ -140,41 +154,45 @@ flowchart TD
 !!! info "Lecture publique"
     Le calendrier est visible par tous sans connexion. La connexion est requise uniquement pour reserver.
 
-!!! warning "Disponibilite par capacite"
-    Un poste est propose uniquement s'il est libre ET couvre au moins une des capacites demandees. L'utilisateur choisit lui-meme parmi les options disponibles.
+!!! warning "Un user, un creneau"
+    Un user ne peut pas avoir deux reservations qui se chevauchent, meme sur des postes differents et meme en mode classique.
+
+!!! warning "Disponibilite par capacite (simulateur)"
+    Un poste est propose uniquement s'il est libre ET couvre au moins une des capacites demandees.
 
 !!! success "Admin"
-    Une reservation creee par un admin est directement validee avec tracabilite complete validated_by et validated_at.
+    Une reservation creee par un admin est directement validee avec tracabilite complete `validated_by` et `validated_at`.
 
 - Connexion obligatoire pour reserver
 - Un user + un poste + un creneau = une reservation
 - Pas de chevauchement possible sur un meme poste
-- Les postes sont tries par score de capacites couvertes
-- L'utilisateur choisit lui-meme le poste parmi les disponibles
-- Les capacites choisies sont sauvegardees en JSON sur la reservation
-- Reservation user : validation = 0 en attente admin
-- Reservation admin : validation = 1 directe
+- En mode simulateur : postes tries par score de capacites couvertes
+- En mode classique : salle entiere — un seul occupant a la fois
+- Reservation user : `validation = 0` en attente admin
+- Reservation admin : `validation = 1` directe
 - Drag and drop et resize bloques sur les reservations validees sauf admin
-- refreshRecords appele apres chaque action
+- `refreshRecords()` appele apres chaque action
 
 ---
 
 ## Livrables
 
-- [x] Migrations type_salles, salles, type_postes, salle_postes, type_capacites, poste_capacites, reservations
+- [x] Migrations type_salles (+ mode enum), salles, type_postes, salle_postes, type_capacites, poste_capacites, reservations
 - [x] Models Eloquent avec relations et methodes metier
-- [x] Seeders de donnees initiales
-- [x] CalendrierWidget Guava Calendar
-- [ ] Algorithme de scoring des postes disponibles
-- [ ] Formulaire de reservation avec selection capacites et postes
-- [ ] Vues Blade calendrier selection poste formulaire
-- [ ] Ressource Filament gestion salles postes capacites
-- [ ] Documentation technique widget
+- [x] Seeders de donnees initiales + poste fictif "Salle entiere" pour salles classiques
+- [x] CalendrierWidget Guava Calendar — navigation multi-niveaux
+- [x] Mode Simulateur : Wizard 3 etapes + scoring postes
+- [x] Mode Classique : Wizard 2 etapes + verification salle libre
+- [x] Filtres calendrier par poste et capacite (mode simulateur)
+- [x] Blocage visuel creneaux deja reserves (`selectAllow`)
+- [x] Resources Filament gestion salles, postes, capacites, types
+- [x] Tests Pest 16 cas
+- [x] Documentation technique widget
 
 ---
 
 ## Documents associes
 
-- [Flux de reservation](index.md)
 - [Schema base de donnees](base-de-donnees.md)
 - [Widget calendrier](widget-calendrier.md)
+- [Tests](test-unitaire.md)

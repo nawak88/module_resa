@@ -4,30 +4,19 @@ namespace Modules\Resa\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\SoftDeletes;
 use Guava\Calendar\Contracts\Eventable;
 use Guava\Calendar\ValueObjects\CalendarEvent;
 use Modules\Resa\Traits\HasTablePrefix;
-use Modules\RH\Models\User;
+use App\Models\User;
 
 class Reservation extends Model implements Eventable
 {
     use HasTablePrefix;
 
     protected $fillable = [
-        'uuid',
-        'user_id',
-        'salle_poste_id',
-        'libelle_court',
-        'libelle_long',
-        'debut',
-        'fin',
-        'couleur',
-        'validation',
-        'capacites_utilisees',
-        'validated_by',
-        'validated_at',
-        'data',
+        'uuid', 'user_id', 'salle_poste_id', 'libelle_court', 'libelle_long',
+        'debut', 'fin', 'couleur', 'validation', 'capacites_utilisees',
+        'validated_by', 'validated_at', 'data',
     ];
 
     protected $casts = [
@@ -39,12 +28,10 @@ class Reservation extends Model implements Eventable
         'data'                => 'array',
     ];
 
-    /* ── Constantes ───────────────────────────────────── */
-
     const EN_ATTENTE = 0;
     const VALIDE     = 1;
 
-    /* ── Relations ────────────────────────────────────── */
+    /* ── Relations ────────────────────────────────────────────────────────── */
 
     public function user(): BelongsTo
     {
@@ -61,7 +48,7 @@ class Reservation extends Model implements Eventable
         return $this->belongsTo(User::class, 'validated_by');
     }
 
-    /* ── Scopes ───────────────────────────────────────── */
+    /* ── Scopes ───────────────────────────────────────────────────────────── */
 
     public function scopeValide($query)
     {
@@ -73,7 +60,7 @@ class Reservation extends Model implements Eventable
         return $query->where('validation', self::EN_ATTENTE);
     }
 
-    /* ── Méthodes métier ──────────────────────────────── */
+    /* ── Methodes metier ──────────────────────────────────────────────────── */
 
     public function isValide(): bool
     {
@@ -103,14 +90,37 @@ class Reservation extends Model implements Eventable
         ]);
     }
 
-    /* ── Guava Calendar — Eventable ───────────────────── */
+    /* ── Guava Calendar — Eventable ───────────────────────────────────────── */
 
     public function toCalendarEvent(): CalendarEvent
     {
         $backgroundColor = $this->isValide() ? '#22c55e' : '#9ca3af';
 
+        // Label capacites pour affichage enrichi
+        $capacitesLabel = '';
+        if (! empty($this->capacites_utilisees)) {
+            $capacitesLabel = TypeCapacite::whereIn('id', $this->capacites_utilisees)
+                ->orderBy('ordre')
+                ->pluck('libelle_court')
+                ->join(', ');
+        }
+
+        $isAdmin = auth()->user()?->can('resa::reservation.view') ?? false;
+
+        $heures = ($this->debut?->format('H:i') ?? '') . ' - ' . ($this->fin?->format('H:i') ?? '');
+        $poste  = $this->sallePoste?->libelle_court ?? '';
+        $nom    = $isAdmin ? ($this->user?->nom ?? '') : '';
+
+        $lignes = array_filter([
+            $heures,
+            $this->libelle_court ?? '',
+            $nom    ? '👤 ' . $nom    : '',
+            $poste  ? '🖥 ' . $poste  : '',
+            $capacitesLabel ? '🎯 ' . $capacitesLabel : '',
+        ]);
+
         return CalendarEvent::make($this)
-            ->title($this->libelle_court ?? '')
+            ->title(implode("\n", $lignes))
             ->start($this->debut?->format('Y-m-d H:i:s'))
             ->end($this->fin?->format('Y-m-d H:i:s'))
             ->resourceId($this->salle_poste_id)
@@ -118,7 +128,11 @@ class Reservation extends Model implements Eventable
             ->extendedProp('validation', $this->validation)
             ->extendedProp('description', $this->libelle_long)
             ->extendedProp('capacites', $this->capacites_utilisees ?? [])
-            ->editable(! $this->isValide() && auth()->id() === $this->user_id)
-            ;
+            ->extendedProp('nom', $this->user?->nom ?? '')
+            ->extendedProp('capacites_label', $capacitesLabel)
+            ->extendedProp('poste', $this->sallePoste?->libelle_court ?? '')
+            ->extendedProp('heure_debut', $this->debut?->format('H:i') ?? '')
+            ->extendedProp('heure_fin',   $this->fin?->format('H:i') ?? '')
+            ->editable(! $this->isValide() && auth()->id() === $this->user_id);
     }
 }

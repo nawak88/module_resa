@@ -10,17 +10,27 @@ class SalleSeeder extends Seeder
 {
     public function run(): void
     {
-        $drone = TypeSalle::where('libelle_court', 'Simulateur drone')->firstOrFail();
+        $sim = TypeSalle::where('libelle_court', 'Simulateur drone')->firstOrFail();
+        $cla = TypeSalle::where('libelle_court', 'Salle classique')->firstOrFail();
 
         $salles = [
             [
                 'libelle_court' => 'Salle 1',
                 'libelle_long'  => 'Salle principale de simulation drone',
-                'type_salle_id' => $drone->id,
+                'type_salle_id' => $sim->id,
                 'code'          => 'S1',
                 'capacite'      => 4,
                 'color'         => 'primary',
                 'ordre'         => 1,
+            ],
+            [
+                'libelle_court' => 'Salle 2',
+                'libelle_long'  => 'Salle classique polyvalente',
+                'type_salle_id' => $cla->id,
+                'code'          => 'S2',
+                'capacite'      => 12,
+                'color'         => 'warning',
+                'ordre'         => 2,
             ],
         ];
 

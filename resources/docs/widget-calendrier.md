@@ -4,6 +4,11 @@
 
 ```
 Modules/Resa/Filament/Widgets/CalendrierWidget.php
+Modules/Resa/Filament/Widgets/CalendrierWidget/Actions/
+    NouvelleResaAction.php
+    NouvelleResaClassiqueAction.php
+    VoirReservationAction.php
+    FiltresAction.php
 ```
 
 Etend `Guava\Calendar\Filament\CalendarWidget` (Guava v2.1.1) integrant FullCalendar dans Filament v4 via Livewire.
@@ -14,103 +19,120 @@ Etend `Guava\Calendar\Filament\CalendarWidget` (Guava v2.1.1) integrant FullCale
 
 | Dependance | Role |
 |---|---|
-| `Guava\Calendar\Filament\CalendarWidget` | Classe parente - FullCalendar dans Filament |
-| `Modules\Resa\Models\Reservation` | Model principal - implement `Eventable` |
-| `Modules\Resa\Models\SallePoste` | Postes - implement `Resourceable` - colonnes calendrier |
+| `Guava\Calendar\Filament\CalendarWidget` | Classe parente — FullCalendar dans Filament |
+| `Modules\Resa\Models\Reservation` | Model principal — implement `Eventable` |
+| `Modules\Resa\Models\SallePoste` | Postes — implement `Resourceable` — colonnes calendrier |
 | `Modules\Resa\Models\Salle` | Nom de la salle active dans le heading |
+| `Modules\Resa\Models\TypeSalle` | Mode simulateur/classique + navigation |
 | `Modules\Resa\Models\TypeCapacite` | Options CheckboxList etape 1 et labels etape 2 |
 | `Modules\Resa\Services\PosteDisponibiliteService` | Algorithme de scoring des postes disponibles |
-| `Modules\RH\Models\User` | Select admin pour reserver pour un tiers |
-
----
-
-## Proprietes de classe
-
-```php
-protected bool $eventClickEnabled  = true;
-protected bool $eventDragEnabled   = true;
-protected bool $eventResizeEnabled = true;
-protected bool $dateClickEnabled   = true;
-protected bool $dateSelectEnabled  = true;
-protected ?string $locale          = 'fr';
-protected bool $useFilamentTimezone = true; // evite le decalage horaire
-```
-
-### `$useFilamentTimezone = true`
-
-Active la gestion du fuseau horaire par Filament. Sans cette propriete, les dates transmises par FullCalendar (fuseau navigateur) ne correspondent pas aux dates stockees en base, creant un decalage de 2h selon le contexte.
+| `App\Models\User` | Select admin pour reserver pour un tiers |
 
 ---
 
 ## Proprietes Livewire publiques
 
-Toutes sont reactives et persistent entre les requetes Livewire.
-
 | Propriete | Type | Description |
 |---|---|---|
-| `$salleActive` | `?int` | ID de la salle affichee. `null` = ecran selection salle |
+| `$etapeNavigation` | `string` | `type_salle` / `salle` / `calendrier` |
+| `$typeSalleActive` | `?int` | ID du TypeSalle selectionne |
+| `$salleActive` | `?int` | ID de la salle affichee |
 | `$adminMode` | `bool` | Active si permission `resa::reservation.view` |
-| `$recordEnCours` | `?int` | ID de la reservation ouverte dans le modal voir |
-| `$recordTitre` | `?string` | Titre sauvegarde au clic - evite le 404 apres suppression |
+| `$recordEnCours` | `?int` | ID de la reservation ouverte dans le modal |
+| `$recordTitre` | `?string` | Titre sauvegarde au clic — evite le 404 apres suppression |
 | `$etapeDebut` | `?string` | Debut du creneau transmis entre les etapes Wizard |
 | `$etapeFin` | `?string` | Fin du creneau transmis entre les etapes Wizard |
-| `$etapeCapacites` | `array` | IDs TypeCapacite choisis a l'etape 1 |
-| `$etapePoste` | `?int` | Reserve - poste lu depuis `$data['poste_id']` en pratique |
+| `$etapeCapacites` | `array` | IDs TypeCapacite choisis a l'etape 1 (simulateur) |
+| `$etapePoste` | `?int` | Reserve |
 | `$postesDisponibles` | `array` | Options Radio calculees dans `afterValidation` etape 1 |
+| `$filtrePostes` | `array` | IDs SallePoste filtres (simulateur uniquement) |
+| `$filtreCapacites` | `array` | IDs TypeCapacite filtres (simulateur uniquement) |
 
 ---
 
-## Initialisation - `mount()`
+## Navigation — `resoudreNavigation()`
+
+Appelee dans `mount()`. Determine automatiquement le point d'entree selon la configuration.
+
+```
+1 seule salle au total
+    → salleActive = salle.id
+    → typeSalleActive = salle.type_salle_id
+    → etapeNavigation = 'calendrier'
+
+Plusieurs salles, 1 seul TypeSalle
+    → typeSalleActive = typeSalle.id
+    → etapeNavigation = 'salle'
+
+Plusieurs TypeSalles
+    → etapeNavigation = 'type_salle'
+```
 
 ```php
-public function mount(): void
-{
-    $this->adminMode = auth()->user()?->can('resa::reservation.view') ?? false;
+public function selectTypeSalle(int $id): void
+// Si 1 seule salle dans ce type → calendrier direct
+// Sinon → liste des salles
 
-    $salles = Salle::orderBy('ordre')->get();
-    if ($salles->count() === 1) {
-        $this->salleActive = $salles->first()->id;
-    }
+public function selectSalle(int $id): void
+// → etapeNavigation = 'calendrier'
+
+public function retourSalles(): void
+// → etapeNavigation = 'salle'
+
+public function retourTypeSalles(): void
+// → etapeNavigation = 'type_salle'
+```
+
+---
+
+## Rendu conditionnel — `render()`
+
+```php
+match ($this->etapeNavigation) {
+    'type_salle' => view('resa::filament.widgets.type-salle-selection', [...]),
+    'salle'      => view('resa::filament.widgets.salle-selection', [...]),
+    default      => parent::render(), // calendrier FullCalendar
 }
 ```
 
-Si une seule salle existe, elle est selectionnee automatiquement. L'ecran de selection ne s'affiche pas.
+### Vues Blade requises
+
+| Vue | Declencheur Livewire |
+|---|---|
+| `resa::filament.widgets.type-salle-selection` | `wire:click="selectTypeSalle($id)"` |
+| `resa::filament.widgets.salle-selection` | `wire:click="selectSalle($id)"`, `wire:click="retourTypeSalles"` |
 
 ---
 
-## Rendu conditionnel - `render()`
-
-```
-adminMode = true
-    CalendarWidget::render() sans ecran de selection
-
-salleActive = null ET pas admin
-    vue resa::filament.widgets.salle-selection
-
-salleActive defini
-    CalendarWidget::render() calendrier de la salle
-```
-
----
-
-## Ressources - `getResources()`
-
-Retourne les `SallePoste` de la salle active. Guava appelle `toCalendarResource()` sur chaque objet.
-
-Chaque poste devient une **colonne** dans la vue timeGrid. Le champ `ordre` determine l'ordre des colonnes.
-
-`SallePoste` doit implementer `Guava\Calendar\Contracts\Resourceable` :
+## Mode actif
 
 ```php
-public function toCalendarResource(): CalendarResource
-{
-    return CalendarResource::make($this->id)->title($this->libelle_court ?? '');
-}
+public function getModeActif(): string  // simulateur | classique
+public function isModeClassique(): bool
+public function isModeSimulateur(): bool
+```
+
+Le mode est lu depuis `TypeSalle::find($this->typeSalleActive)->mode`.
+
+---
+
+## Ressources — `getResources()`
+
+```php
+// Mode classique → pas de colonnes
+if ($this->isModeClassique()) return [];
+
+// Mode simulateur → postes reels, sans le poste fictif
+return SallePoste::query()
+    ->where('salle_id', $this->salleActive)
+    ->where('libelle_court', '!=', 'Salle entiere')
+    ->orderBy('ordre')
+    ->get();
 ```
 
 ---
 
-## Evenements - `getEvents()`
+## Evenements — `getEvents()`
 
 | Role | Reservations visibles |
 |---|---|
@@ -118,235 +140,141 @@ public function toCalendarResource(): CalendarResource
 | Connecte | `validation = 1` + ses propres reservations en attente |
 | Admin | Toutes sans filtre |
 
-`Reservation` doit implementer `Guava\Calendar\Contracts\Eventable`. Le champ `resourceId` doit etre `$this->salle_poste_id` pour lier chaque evenement a la bonne colonne.
+Filtres additionnels (mode simulateur) : `filtrePostes` (`whereIn`) et `filtreCapacites` (`whereJsonContains`).
 
 ---
 
-## Options FullCalendar - `getOptions()`
+## Deux Wizards selon le mode
 
-| Option | Valeur | Description |
-|---|---|---|
-| `weekends` | `false` | Weekends masques |
-| `businessHours` | lun-ven 08h-17h | Plage horaire autorisee |
-| `selectConstraint` | `businessHours` | Selection limitee aux heures ouvrables |
-| `initialView` | `timeGridWeek` | Vue semaine par defaut |
-| `slotDuration` | `00:15:00` | Granularite 15 min |
-| `slotMinTime` | `08:00:00` | Debut de journee |
-| `slotMaxTime` | `17:00:00` | Fin de journee |
-| `selectable` | `true` | Selection de plage activee |
-| `editable` | `auth()->check()` | Drag/resize si connecte |
-
----
-
-## Validation metier - `validerCreneau()`
-
-Appelee a 3 endroits :
-
-1. `afterValidation()` etape 1 du Wizard - bloque le passage a l'etape 2
-2. `->action()` final - verification cote serveur avant creation
-3. `onEventDrop()` et `onEventResize()` - bloque le drag/resize hors plage
-
-Regles validees :
-
-- Pas de reservation le week-end
-- Pas de reservation dans le passe
-- Fin strictement superieure au debut
-- Debut entre 08h00 et 16h59
-- Fin entre 08h01 et 17h00
-
-!!! warning "Bug Carbon startOfDay - IMPORTANT"
-    Utiliser `$d->copy()->startOfDay()` et NON `$d->startOfDay()`. La methode `startOfDay()` est **mutating** — elle modifie l'objet Carbon en place et remet l'heure a 00:00. Apres cet appel, `$d->hour` vaut 0 et toutes les validations horaires suivantes retournent une erreur meme pour un creneau valide.
-
-```php
-// ❌ INCORRECT - modifie $d, heure devient 00:00
-if ($d->startOfDay()->lt(now()->startOfDay())) { ... }
-
-// ✅ CORRECT - $d conserve son heure
-if ($d->copy()->startOfDay()->lt(now()->startOfDay())) { ... }
-```
-
----
-
-## Point cle - actions dans `getHeaderActions()`
-
-!!! warning "Guava 2.1.1 + Filament v4"
-    `mountAction()` ne fonctionne que sur des actions enregistrees dans `getHeaderActions()`. Les actions declarees ailleurs ne sont pas accessibles. Toutes les actions - meme cachees - doivent etre dans ce tableau.
-
-Les actions cachees utilisent `->extraAttributes(['style' => 'display:none'])` pour ne pas apparaitre dans l'UI tout en restant montables via `mountAction()`.
-
-**Actions dans `getHeaderActions()` :**
-
-| Action | Visible | Declencheur |
-|---|---|---|
-| `retour_salle` | oui (si salleActive) | bouton |
-| `login` | oui (si non connecte) | bouton |
-| `nouvelle_resa` | oui (si connecte) | bouton + `onDateClick` + `onDateSelect` |
-| `voirReservation` | non (display:none) | `onEventClick` |
-
----
-
-## Flux Wizard - nouvelle reservation
+### Mode Simulateur — `NouvelleResaAction`
 
 ```
-Bouton "Nouvelle reservation"
-OU clic/selection sur calendrier
-    mountAction('nouvelle_resa')
-        |
-        v
 Etape 1 - Creneau et capacites
     DateTimePicker debut/fin
-        minDate = today
-        disabledDates = weekends sur 6 mois
-        hoursStep = 1, minutesStep = 15
-    CheckboxList des TypeCapacite
+    CheckboxList TypeCapacite
     afterValidation()
-        validerCreneau() - bloque si invalide
+        validerCreneauPublic() — bloque + ValidationException si invalide
         PosteDisponibiliteService::postesDisponibles()
-        stocke dans $this->postesDisponibles
-        |
-        v
+        → $this->postesDisponibles
+
 Etape 2 - Choix du poste
-    schema() (closure) lit $this->postesDisponibles
     Radio avec postes tries par score
-        |
-        v
+
 Etape 3 - Informations
-    Select user_id (admin uniquement, searchable)
-    Placeholder recap creneau
-    TextInput intitule (required)
-    Textarea informations
-        |
-        v
+    Select user_id (admin uniquement)
+    TextInput libelle_court
+    Textarea libelle_long
+
 action() final
-    $data contient TOUT - Wizard agrege toutes les etapes
-    $data['poste_id'] disponible directement
-    validerCreneau() finale cote serveur
-    isDisponible() anti-chevauchement race condition
+    validerCreneauPublic() cote serveur
+    isDisponible() anti-race-condition
     Reservation::create()
-    Reset des proprietes etape*
-    refreshRecords()
 ```
 
-### Donnees disponibles dans `$data` final
+### Mode Classique — `NouvelleResaClassiqueAction`
 
-```php
-$data['debut']         // etape 1
-$data['fin']           // etape 1
-$data['capacites']     // etape 1 - array d'IDs TypeCapacite
-$data['poste_id']      // etape 2 - ID du SallePoste choisi
-$data['user_id']       // etape 3 - admin uniquement
-$data['libelle_court'] // etape 3
-$data['libelle_long']  // etape 3
 ```
+Etape 1 - Creneau
+    DateTimePicker debut/fin
+    TextEntry capacite de la salle (indicatif)
+    afterValidation()
+        validerCreneauPublic()
+        isDisponible() sur le poste fictif "Salle entiere"
+        → bloque si salle deja reservee
 
-### Labels des postes - etape 2
+Etape 2 - Informations
+    TextEntry recap creneau
+    TextInput libelle_court
+    Textarea libelle_long
 
-| Cas | Label affiche |
-|---|---|
-| Aucune capacite demandee | `"Poste 1 - libre"` |
-| Toutes les capacites couvertes | `"Poste 1 - toutes les capacites (2/2)"` |
-| Couverture partielle | `"Poste 2 - 1/2 (manque: 20mm)"` |
-| Aucun poste disponible | Placeholder "Aucun poste disponible..." |
-
----
-
-## Modal voir une reservation
-
-Ouvert par `onEventClick()` :
-
-```php
-protected function onEventClick(EventClickInfo $info, Model $event, ?string $action = null): void
-{
-    $this->recordEnCours = $info->record->id;
-    $this->recordTitre   = $info->record->libelle_court; // sauvegarde AVANT suppression
-    $this->mountAction('voirReservation');
-}
-```
-
-`$recordTitre` sauvegarde le titre au moment du clic. Il est utilise dans `->modalHeading()` pour eviter une requete sur un enregistrement supprime (bug 404).
-
-### Actions footer
-
-| Action | Condition |
-|---|---|
-| Supprimer | `isEnAttente()` + (admin ou proprietaire) + confirmation |
-| Valider | Admin + `resa::validation_salle` + `isEnAttente()` |
-| Invalider | Admin + `resa::validation_salle` + `isValide()` |
-
-Apres suppression :
-
-```php
-$record->delete();
-$this->recordEnCours = null;
-$this->recordTitre   = null;
-$this->refreshRecords();
-$this->unmountAction(); // ferme le modal proprement
+action() final
+    Recupere le SallePoste "Salle entiere" de la salle active
+    isDisponible() anti-race-condition
+    Reservation::create() avec capacites_utilisees = []
 ```
 
 ---
 
-## Drag & Drop et Resize
+## Header actions
 
-| Regle | Description |
-|---|---|
-| Reservation validee | Bloquee pour les users, autorisee pour les admins |
-| Reservation d'un autre user | Bloquee |
-| Hors plage horaire ou week-end | Bloque par `validerCreneau()` |
+| Action | Mode | Visible | Declencheur |
+|---|---|---|---|
+| `retour_salle` | tous | si plusieurs salles | bouton |
+| `retour_type_salle` | tous | si plusieurs types + 1 salle | bouton |
+| `login` | tous | si non connecte | bouton |
+| `filtres` | simulateur | si connecte | bouton |
+| `nouvelle_resa` | selon mode | si connecte | bouton + `onDateClick` + `onDateSelect` |
+| `voirReservation` | tous | non (display:none) | `onEventClick` |
 
 ---
 
-## Service PosteDisponibiliteService
+## Validation metier — `validerCreneauPublic()`
 
-Enregistrer dans `ResaServiceProvider` :
+Appelee dans `afterValidation()` etape 1, `action()` final, `onEventDrop()` et `onEventResize()`.
 
-```php
-$this->app->singleton(PosteDisponibiliteService::class);
+Regles :
+- Pas le week-end
+- Pas dans le passe
+- Fin > debut
+- Debut entre 08h00 et 16h59
+- Fin entre 08h01 et 17h00
+- Un user ne peut pas avoir deux reservations qui se chevauchent
+
+!!! warning "Bug Carbon startOfDay() mutating"
+    Toujours `$d->copy()->startOfDay()` et non `$d->startOfDay()`.
+    `startOfDay()` modifie `$d` en place — l'heure devient 00:00 et toutes les validations horaires suivantes echouent.
+
+---
+
+## Blocage visuel creneaux — `selectAllow`
+
+Les reservations existantes du user connecte sont serialisees en JSON et passees a FullCalendar via `getOptions()`. `selectAllow` en JS verifie le chevauchement et retourne `false` pour bloquer visuellement la selection avant meme d'ouvrir le Wizard.
+
+---
+
+## Affichage des evenements
+
+Le titre est construit dans `Reservation::toCalendarEvent()` avec `implode("\n", $lignes)` :
+
+```
+09:00 - 11:00
+Entrainement FPV
+👤 Boisson (admin uniquement)
+🖥 Poste 1
+🎯 FPV, 20mm
 ```
 
-Structure de retour de `postesDisponibles()` :
-
-```php
-[
-    [
-        'poste'      => SallePoste,  // model avec typeCapacites eager loaded
-        'score'      => 2,           // capacites couvertes
-        'total'      => 2,           // capacites demandees
-        'manquantes' => Collection,  // IDs des capacites non couvertes
-    ],
-]
-```
+`extendedProps` transmis a FullCalendar :
+- `nom` — renseigne uniquement si `$isAdmin`
+- `poste` — `libelle_court` du SallePoste
+- `capacites_label` — libelles des capacites jointes
+- `heure_debut` / `heure_fin` — format `H:i`
 
 ---
 
-## Vues Blade requises
-
-| Vue | Description |
-|---|---|
-| `resa::filament.widgets.salle-selection` | Grille de selection. Doit appeler `$this->selectSalle($id)` via `wire:click` |
-
----
-
-## Points d'attention pour la reprise
+## Points d'attention
 
 !!! danger "Carbon startOfDay() mutating"
-    `$d->startOfDay()` modifie `$d` en place. Toujours utiliser `$d->copy()->startOfDay()` pour eviter que `$d->hour` soit remis a 0 et fausse la validation horaire.
+    `$d->startOfDay()` modifie `$d` en place. Toujours `$d->copy()->startOfDay()`.
 
 !!! warning "Bug 404 apres suppression"
-    Toujours sauvegarder `$recordTitre` au moment du clic sur l'evenement. Ne jamais appeler `Reservation::find($this->recordEnCours)?->libelle_court` dans `->modalHeading()` - `recordEnCours` est null apres suppression.
+    Sauvegarder `$recordTitre` au clic. Ne jamais appeler `Reservation::find($this->recordEnCours)` dans `->modalHeading()`.
 
 !!! warning "Type-hint valider()"
-    `Reservation::valider()` ne doit pas avoir de type-hint strict sur `$admin`. `auth()->user()` retourne `App\Models\User` et non `Modules\RH\Models\User`.
+    `Reservation::valider()` sans type-hint strict sur `$admin`.
 
-    ```php
-    // ✅ correct
-    public function valider($admin): void
-    ```
+!!! warning "Wizard donnees inter-etapes"
+    `$postesDisponibles` est une propriete Livewire publique — elle persiste entre les requetes du Wizard.
 
-!!! warning "Wizard et donnees inter-etapes"
-    `$postesDisponibles` est calcule dans `afterValidation()` etape 1 et lu dans `schema()` etape 2. C'est une propriete Livewire publique - elle persiste entre les requetes du Wizard.
+!!! warning "eventContent() — NE PAS UTILISER"
+    `eventContent()` avec Alpine.js casse le `onClick` de Guava v2.1.1. Utiliser `implode("\n", ...)` dans `title()` a la place.
+
+!!! warning "eventDidMount — NE PAS UTILISER"
+    Meme probleme que `eventContent()`. Casse le handler `onClick` Alpine.
+
+!!! info "Poste fictif mode classique"
+    Le poste "Salle entiere" est exclu de `getResources()` via `where('libelle_court', '!=', 'Salle entiere')`.
+    Il est utilise uniquement comme `salle_poste_id` sur les reservations classiques.
 
 !!! info "refreshRecords()"
-    Methode Guava Calendar qui force le rechargement depuis `getEvents()`. A appeler apres toute creation, suppression ou changement de validation.
-
-!!! info "getWeekendDates()"
-    Calcule les dates de weekend sur 6 mois pour le `disabledDates()` des DateTimePicker. Appele au moment du rendu du formulaire. Si les performances sont un sujet, mettre le resultat en cache.
+    Methode Guava qui force le rechargement depuis `getEvents()`. Appeler apres toute creation, suppression ou changement de validation.

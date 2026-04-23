@@ -13,8 +13,8 @@ class PermissionsSeeder extends Seeder
     {
         // Permissions spécifiques hors-ressource
         $specific = [
-            'resa::validation_salle',
-            'resa::reservation.view',
+            'resa::validation_salle', // resa::reservation.valider
+            'resa::reservation.view', // resa::reservation.voir
            
         ];
 

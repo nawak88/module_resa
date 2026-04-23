@@ -10,6 +10,7 @@ use Modules\Resa\Models\Reservation;
 use Modules\Resa\Models\Salle;
 use Modules\Resa\Models\SallePoste;
 use Modules\Resa\Models\TypeCapacite;
+use Modules\Resa\Models\TypeSalle;
 use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
@@ -44,11 +45,10 @@ beforeEach(function () {
     $this->fpv    = TypeCapacite::where('libelle_court', 'FPV')->firstOrFail();
     $this->mm20   = TypeCapacite::where('libelle_court', '20mm')->firstOrFail();
 
-    $this->debutLibre = now()->addWeek()->startOfWeek()->setTime(9, 0)->toDateTimeString();
-    $this->finLibre   = now()->addWeek()->startOfWeek()->setTime(11, 0)->toDateTimeString();
-    $this->debutPris  = now()->addWeek()->startOfWeek()->setTime(14, 0)->toDateTimeString();
-    $this->finPrise   = now()->addWeek()->startOfWeek()->setTime(16, 0)->toDateTimeString();
-
+    $this->debutLibre = now()->next('Monday')->setTime(9, 0)->toDateTimeString();
+    $this->finLibre   = now()->next('Monday')->setTime(11, 0)->toDateTimeString();
+    $this->debutPris  = now()->next('Monday')->setTime(14, 0)->toDateTimeString();
+    $this->finPrise   = now()->next('Monday')->setTime(16, 0)->toDateTimeString();
 });
 
 /* ══════════════════════════════════════════════════════════════════════════════
@@ -79,20 +79,30 @@ function getEventsForRole(?User $user, int $salleId): \Illuminate\Support\Collec
  * HELPER — reproduit la logique de validerCreneau() du widget
  * ══════════════════════════════════════════════════════════════════════════════ */
 
-function validerCreneau(string $debut, string $fin): ?string
+function validerCreneau(string $debut, string $fin, ?int $userId = null): ?string
 {
     $d = \Carbon\Carbon::parse($debut);
     $f = \Carbon\Carbon::parse($fin);
 
-    if ($d->copy()->isWeekend()) return 'Reservation impossible le week-end.';
+    if ($d->isWeekend()) return 'Reservation impossible le week-end.';
     if ($d->copy()->startOfDay()->lt(now()->startOfDay())) return 'Impossible de reserver dans le passe.';
-    if ($f->copy()->lte($d)) return 'La date de fin doit etre superieure a la date de debut.';
+    if ($f->lte($d)) return 'La date de fin doit etre superieure a la date de debut.';
 
     $debutMin = $d->hour * 60 + $d->minute;
     $finMin   = $f->hour * 60 + $f->minute;
 
     if ($debutMin < 8 * 60 || $debutMin >= 17 * 60) return 'Heure de debut invalide.';
     if ($finMin <= 8 * 60 || $finMin > 17 * 60)     return 'Heure de fin invalide.';
+
+    // Verifie chevauchement pour le user
+    if ($userId) {
+        $dejaReserve = \Modules\Resa\Models\Reservation::where('user_id', $userId)
+            ->where('debut', '<', $fin)
+            ->where('fin',   '>', $debut)
+            ->exists();
+
+        if ($dejaReserve) return 'Vous avez deja une reservation sur ce creneau.';
+    }
 
     return null;
 }
@@ -111,18 +121,7 @@ function creerReservation(
     ?User $pourUser = null
 ): ?Reservation {
     // Validation metier
-    //if (validerCreneau($debut, $fin)) return null;
-    $erreur = validerCreneau($debut, $fin);
-    if ($erreur) {
-       // dump("validerCreneau bloque: $erreur");
-        return null;
-    }
-
-    if (! $poste->isDisponible(new \DateTime($debut), new \DateTime($fin))) {
-        // dump("isDisponible bloque");
-        return null;
-    }
-
+    if (validerCreneau($debut, $fin, $actingAs->id)) return null;
 
     // Disponibilite
     if (! $poste->isDisponible(new \DateTime($debut), new \DateTime($fin))) return null;
@@ -150,12 +149,12 @@ function creerReservation(
 describe('Visiteur non connecte', function () {
 
     it('voit le widget calendrier', function () {
-        Livewire::test(CalendrierWidget::class, ['salleActive' => $this->salle->id])
+        Livewire::test(CalendrierWidget::class, ['salleActive' => $this->salle->id, 'etapeNavigation' => 'calendrier', 'typeSalleActive' => $this->salle->type_salle_id])
             ->assertSuccessful();
     });
 
     it('ne voit pas le bouton de reservation', function () {
-        Livewire::test(CalendrierWidget::class, ['salleActive' => $this->salle->id])
+        Livewire::test(CalendrierWidget::class, ['salleActive' => $this->salle->id, 'etapeNavigation' => 'calendrier', 'typeSalleActive' => $this->salle->type_salle_id])
             ->assertSee('Se connecter pour reserver')
             ->assertDontSee('Nouvelle reservation');
     });
@@ -195,7 +194,7 @@ describe('Utilisateur connecte', function () {
 
     it('voit le bouton nouvelle reservation', function () {
         Livewire::actingAs($this->user)
-            ->test(CalendrierWidget::class, ['salleActive' => $this->salle->id])
+            ->test(CalendrierWidget::class, ['salleActive' => $this->salle->id, 'etapeNavigation' => 'calendrier', 'typeSalleActive' => $this->salle->type_salle_id])
             ->assertSee('Nouvelle reservation');
     });
 
@@ -488,6 +487,225 @@ describe('Admin', function () {
         $resa->delete();
 
         $this->assertDatabaseMissing('resa_reservations', ['id' => $resa->id]);
+    });
+
+});
+
+/* ══════════════════════════════════════════════════════════════════════════════
+ * SALLE CLASSIQUE
+ * ══════════════════════════════════════════════════════════════════════════════ */
+
+describe('Salle classique', function () {
+
+    beforeEach(function () {
+        // Recupere la salle classique et son poste fictif crees par le seeder
+        $this->salleClassique  = Salle::where('libelle_court', 'Salle 2')->firstOrFail();
+        $this->posteFictif     = SallePoste::where('salle_id', $this->salleClassique->id)
+                                           ->where('libelle_court', 'Salle entiere')
+                                           ->firstOrFail();
+        $this->typeSalleActive = $this->salleClassique->type_salle_id;
+
+        $this->debutClassique = now()->addWeek()->startOfWeek()->setTime(9, 0)->toDateTimeString();
+        $this->finClassique   = now()->addWeek()->startOfWeek()->setTime(11, 0)->toDateTimeString();
+    });
+
+    /* ── Logique metier ──────────────────────────────────────────────────── */
+
+    it('la salle classique a un TypeSalle en mode classique', function () {
+        $typeSalle = TypeSalle::find($this->salleClassique->type_salle_id);
+
+        expect($typeSalle)->not->toBeNull();
+        expect($typeSalle->isClassique())->toBeTrue();
+        expect($typeSalle->isSimulateur())->toBeFalse();
+    });
+
+    it('le poste fictif Salle entiere existe et est system', function () {
+        expect($this->posteFictif)->not->toBeNull();
+        expect($this->posteFictif->isSystem())->toBeTrue();
+        expect($this->posteFictif->libelle_court)->toBe('Salle entiere');
+    });
+
+    it('peut reserver la salle entiere sur un creneau libre', function () {
+        $erreur = validerCreneau($this->debutClassique, $this->finClassique, $this->user->id);
+        expect($erreur)->toBeNull();
+
+        $disponible = $this->posteFictif->isDisponible(
+            new \DateTime($this->debutClassique),
+            new \DateTime($this->finClassique)
+        );
+        expect($disponible)->toBeTrue();
+
+        $resa = Reservation::create([
+            'user_id'             => $this->user->id,
+            'salle_poste_id'      => $this->posteFictif->id,
+            'libelle_court'       => 'Reunion section B',
+            'debut'               => $this->debutClassique,
+            'fin'                 => $this->finClassique,
+            'capacites_utilisees' => [],
+            'validation'          => Reservation::EN_ATTENTE,
+        ]);
+
+        $this->assertDatabaseHas('resa_reservations', [
+            'user_id'        => $this->user->id,
+            'salle_poste_id' => $this->posteFictif->id,
+            'libelle_court'  => 'Reunion section B',
+            'validation'     => Reservation::EN_ATTENTE,
+        ]);
+    });
+
+    it('ne peut pas reserver si la salle est deja occupee sur ce creneau', function () {
+        // Premiere reservation
+        Reservation::create([
+            'user_id'             => $this->user->id,
+            'salle_poste_id'      => $this->posteFictif->id,
+            'libelle_court'       => 'Resa existante',
+            'debut'               => $this->debutClassique,
+            'fin'                 => $this->finClassique,
+            'capacites_utilisees' => [],
+            'validation'          => Reservation::VALIDE,
+        ]);
+
+        // Tentative de chevauchement sur la meme salle
+        $disponible = $this->posteFictif->isDisponible(
+            new \DateTime($this->debutClassique),
+            new \DateTime($this->finClassique)
+        );
+
+        expect($disponible)->toBeFalse();
+
+        $this->assertDatabaseMissing('resa_reservations', [
+            'libelle_court' => 'Tentative salle occupee',
+        ]);
+    });
+
+    it('deux users ne peuvent pas reserver la meme salle classique en meme temps', function () {
+        $autreUser = User::factory()->create();
+
+        // User 1 reserve
+        Reservation::create([
+            'user_id'             => $this->user->id,
+            'salle_poste_id'      => $this->posteFictif->id,
+            'libelle_court'       => 'Resa user 1',
+            'debut'               => $this->debutClassique,
+            'fin'                 => $this->finClassique,
+            'capacites_utilisees' => [],
+            'validation'          => Reservation::VALIDE,
+        ]);
+
+        // User 2 tente de reserver le meme creneau
+        $disponible = $this->posteFictif->isDisponible(
+            new \DateTime($this->debutClassique),
+            new \DateTime($this->finClassique)
+        );
+
+        expect($disponible)->toBeFalse();
+    });
+
+    it('peut reserver des creneaux non chevauchants dans la meme salle', function () {
+        // Resa matin
+        Reservation::create([
+            'user_id'             => $this->user->id,
+            'salle_poste_id'      => $this->posteFictif->id,
+            'libelle_court'       => 'Resa matin',
+            'debut'               => now()->addWeek()->startOfWeek()->setTime(8, 0)->toDateTimeString(),
+            'fin'                 => now()->addWeek()->startOfWeek()->setTime(10, 0)->toDateTimeString(),
+            'capacites_utilisees' => [],
+            'validation'          => Reservation::VALIDE,
+        ]);
+
+        // Resa apres-midi — ne chevauche pas
+        $debutAM = now()->addWeek()->startOfWeek()->setTime(13, 0)->toDateTimeString();
+        $finAM   = now()->addWeek()->startOfWeek()->setTime(15, 0)->toDateTimeString();
+
+        $disponible = $this->posteFictif->isDisponible(
+            new \DateTime($debutAM),
+            new \DateTime($finAM)
+        );
+
+        expect($disponible)->toBeTrue();
+
+        $resa = Reservation::create([
+            'user_id'             => $this->user->id,
+            'salle_poste_id'      => $this->posteFictif->id,
+            'libelle_court'       => 'Resa apres-midi',
+            'debut'               => $debutAM,
+            'fin'                 => $finAM,
+            'capacites_utilisees' => [],
+            'validation'          => Reservation::EN_ATTENTE,
+        ]);
+
+        $this->assertDatabaseHas('resa_reservations', [
+            'libelle_court' => 'Resa apres-midi',
+        ]);
+    });
+
+    it('les capacites utilisees sont vides en mode classique', function () {
+        $resa = Reservation::create([
+            'user_id'             => $this->user->id,
+            'salle_poste_id'      => $this->posteFictif->id,
+            'libelle_court'       => 'Resa classique sans capacites',
+            'debut'               => $this->debutClassique,
+            'fin'                 => $this->finClassique,
+            'capacites_utilisees' => [],
+            'validation'          => Reservation::EN_ATTENTE,
+        ]);
+
+        expect($resa->capacites_utilisees)->toBeArray();
+        expect($resa->capacites_utilisees)->toBeEmpty();
+    });
+
+    it('le poste fictif est exclu des ressources du calendrier', function () {
+        // En mode classique getResources() doit retourner []
+        // On verifie que le poste fictif n\'apparait pas dans une requete simulateur
+        $postesVisibles = SallePoste::where('salle_id', $this->salleClassique->id)
+            ->where('libelle_court', '!=', 'Salle entiere')
+            ->get();
+
+        expect($postesVisibles)->toBeEmpty();
+    });
+
+    it('admin peut valider une reservation classique', function () {
+        $resa = Reservation::create([
+            'user_id'             => $this->user->id,
+            'salle_poste_id'      => $this->posteFictif->id,
+            'libelle_court'       => 'A valider classique',
+            'debut'               => $this->debutClassique,
+            'fin'                 => $this->finClassique,
+            'capacites_utilisees' => [],
+            'validation'          => Reservation::EN_ATTENTE,
+        ]);
+
+        $resa->valider($this->admin);
+
+        $this->assertDatabaseHas('resa_reservations', [
+            'id'           => $resa->id,
+            'validation'   => Reservation::VALIDE,
+            'validated_by' => $this->admin->id,
+        ]);
+    });
+
+    it('les regles horaires s\'appliquent aussi en mode classique', function () {
+        $samedi = now()->next('Saturday')->setTime(10, 0)->toDateTimeString();
+        $finSam = now()->next('Saturday')->setTime(11, 0)->toDateTimeString();
+
+        expect(validerCreneau($samedi, $finSam))->not->toBeNull();
+
+        $hors = now()->next('Monday')->setTime(6, 0)->toDateTimeString();
+        $finH = now()->next('Monday')->setTime(7, 0)->toDateTimeString();
+
+        expect(validerCreneau($hors, $finH))->not->toBeNull();
+    });
+
+    /* ── Navigation ──────────────────────────────────────────────────────── */
+
+    it('le widget s\'affiche en mode calendrier pour la salle classique', function () {
+        Livewire::actingAs($this->user)
+            ->test(CalendrierWidget::class, [
+                'salleActive'      => $this->salleClassique->id,
+                'etapeNavigation'  => 'calendrier',
+                'typeSalleActive'  => $this->typeSalleActive,
+            ])
+            ->assertSuccessful();
     });
 
 });

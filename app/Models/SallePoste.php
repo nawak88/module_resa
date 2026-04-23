@@ -21,9 +21,14 @@ class SallePoste extends Model implements Resourceable
         'libelle_court',
         'libelle_long',
         'ordre',
+        'system',
     ];
 
-    /* ── Relations ────────────────────────────────────── */
+    protected $casts = [
+        'system' => 'boolean',
+    ];
+
+    /* ── Relations ────────────────────────────────────────────────────────── */
 
     public function salle(): BelongsTo
     {
@@ -50,11 +55,15 @@ class SallePoste extends Model implements Resourceable
         return $this->hasMany(Reservation::class, 'salle_poste_id');
     }
 
-    /* ── Disponibilité ────────────────────────────────── */
+    /* ── Methodes ─────────────────────────────────────────────────────────── */
 
-    /**
-     * Vérifie si le poste est libre sur un créneau donné.
-     */
+    public function isSystem(): bool
+    {
+        return (bool) $this->system;
+    }
+
+    /* ── Disponibilite ────────────────────────────────────────────────────── */
+
     public function isDisponible(\DateTime $debut, \DateTime $fin, ?int $excludeId = null): bool
     {
         return ! $this->reservations()
@@ -65,13 +74,6 @@ class SallePoste extends Model implements Resourceable
             ->exists();
     }
 
-    /**
-     * Calcule le score de compatibilité avec une liste de capacités demandées.
-     * Retourne le nombre de capacités couvertes sur le total demandé.
-     *
-     * @param  array $typeCapaciteIds  IDs des TypeCapacite demandées
-     * @return int
-     */
     public function scoreCapacites(array $typeCapaciteIds): int
     {
         if (empty($typeCapaciteIds)) return 0;
@@ -81,7 +83,7 @@ class SallePoste extends Model implements Resourceable
             ->count();
     }
 
-    /* ── Guava Calendar — Resourceable ───────────────── */
+    /* ── Guava Calendar — Resourceable ───────────────────────────────────── */
 
     public function toCalendarResource(): CalendarResource
     {

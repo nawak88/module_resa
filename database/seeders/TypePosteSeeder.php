@@ -10,7 +10,12 @@ class TypePosteSeeder extends Seeder
     public function run(): void
     {
         $types = [
-            ['libelle_court' => 'Poste standard', 'libelle_long' => 'Poste de simulation standard', 'ordre' => 1],
+            [
+                'libelle_court' => 'Poste standard',
+                'libelle_long'  => 'Poste de simulation standard',
+                'ordre'         => 1,
+                'system'        => true, // entree systeme — non supprimable
+            ],
         ];
 
         foreach ($types as $data) {
