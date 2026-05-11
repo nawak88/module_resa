@@ -22,10 +22,10 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 
-
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
 use Filament\Tables\Columns\ImageColumn;
+use Modules\Resa\Models\TypeSalle;
 
 class SalleResource extends Resource
 {
@@ -39,6 +39,11 @@ class SalleResource extends Resource
     {
         return $schema
             ->components([
+                Select::make('type_salle_id')
+                    ->label('Type de salle')
+                    ->options(TypeSalle::orderBy('ordre')->pluck('libelle_court', 'id'))
+                    ->required()
+                    ->native(false),
                 TextInput::make('code')
                 ->maxLength(255)
                 ->default(null),

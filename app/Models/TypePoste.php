@@ -8,7 +8,6 @@ use Modules\Resa\Traits\HasTablePrefix;
 use Modules\Resa\Models\SallePoste;
 
 
-
 class TypePoste extends Model
 {
     use HasTablePrefix;
@@ -18,6 +17,11 @@ class TypePoste extends Model
         'libelle_court',
         'libelle_long',
         'ordre',
+        'system',
+    ];
+
+    protected $casts = [
+        'system' => 'boolean',
     ];
 
     public function sallePostes(): HasMany
@@ -25,5 +29,8 @@ class TypePoste extends Model
         return $this->hasMany(SallePoste::class, 'type_poste_id');
     }
 
-   
+    public function isSystem(): bool
+    {
+        return (bool) $this->system;
+    }
 }

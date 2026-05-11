@@ -6,8 +6,10 @@ use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Schema;
 use Modules\Resa\Models\Salle;
+use Modules\Resa\Models\SallePoste;
 use Modules\Resa\Models\TypeCapacite;
 use Modules\Resa\Models\TypePoste;
 
