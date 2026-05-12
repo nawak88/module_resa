@@ -18,6 +18,7 @@ use Modules\Resa\Models\Salle;
 use Filament\Forms;
 use Filament\Resources\Resource;
 use Filament\Tables;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
@@ -25,6 +26,8 @@ use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
 use Filament\Tables\Columns\ImageColumn;
+use Modules\RH\Models\LieuUnite;
+use Modules\RH\Models\Unite;
 use Modules\Resa\Models\TypeSalle;
 
 class SalleResource extends Resource
@@ -44,7 +47,34 @@ class SalleResource extends Resource
                     ->options(TypeSalle::orderBy('ordre')->pluck('libelle_court', 'id'))
                     ->required()
                     ->native(false),
-                TextInput::make('code')
+
+                Select::make('lieu_unite_id')
+                    ->label('Lieu')
+                    ->options(LieuUnite::orderBy('ordre')->pluck('libelle_court', 'id'))
+                    ->native(false)
+                    ->dehydrated(false)
+                    ->live()
+                    ->afterStateHydrated(function ($set, $record) {
+                        if ($record?->unite_id) {
+                            $set('lieu_unite_id', Unite::find($record->unite_id)?->lieu_unite_id);
+                        }
+                    })
+                    ->afterStateUpdated(fn ($set) => $set('unite_id', null)),
+
+                Select::make('unite_id')
+                    ->label('Unité')
+                    ->options(fn ($get) => Unite::when(
+                        $get('lieu_unite_id'),
+                        fn ($q, $id) => $q->where('lieu_unite_id', $id),
+                    )->orderBy('libelle_court')->pluck('libelle_court', 'id'))
+                    ->native(false)
+                    ->searchable(),
+                TextInput::make('email')
+                ->label('Email(s) de notification')
+                ->helperText('Plusieurs adresses séparées par des virgules')
+                ->maxLength(500)
+                ->default(null),
+            TextInput::make('code')
                 ->maxLength(255)
                 ->default(null),
             TextInput::make('libelle_court')
@@ -91,6 +121,14 @@ class SalleResource extends Resource
             ->defaultPaginationPageOption(25) 
             ->columns([
                 
+                TextColumn::make('unite.lieuUnite.libelle_court')
+                    ->label('Lieu')
+                    ->sortable()
+                    ->badge()
+                    ->color('success'),
+                TextColumn::make('unite.libelle_court')
+                    ->label('Unité')
+                    ->sortable(),
                 TextColumn::make('code')
                     ->searchable(),
                 TextColumn::make('libelle_court')
@@ -117,7 +155,15 @@ class SalleResource extends Resource
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
         ])
-        ->filters([])
+        ->filters([
+            SelectFilter::make('lieu')
+                ->label('Lieu')
+                ->options(LieuUnite::orderBy('ordre')->pluck('libelle_court', 'id'))
+                ->query(fn ($query, $data) => $data['value']
+                    ? $query->whereHas('unite', fn ($q) => $q->where('lieu_unite_id', $data['value']))
+                    : $query
+                ),
+        ])
         ->recordActions([
             EditAction::make(),
             DeleteAction::make(),

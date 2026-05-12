@@ -12,6 +12,8 @@ use Modules\Resa\Policies;
 use App\Filament\PanelRegistry\DirectMenuItem;
 use App\Filament\PanelRegistry\ModuleDefinedMenusRegistry;
 use Modules\Resa\Filament\Resources\ReservationResource;
+use Modules\Resa\Models\Reservation;
+use Modules\Resa\Observers\ReservationObserver;
 
 class ResaServiceProvider extends ServiceProvider
 {
@@ -35,6 +37,7 @@ class ResaServiceProvider extends ServiceProvider
         $this->registerViews();
         $this->loadMigrationsFrom(module_path($this->name, 'database/migrations'));
         $this->registerFilamentAssets();
+        Reservation::observe(ReservationObserver::class);
         // $this->publishes([
         //     module_path($this->name, 'resources/assets') => public_path('resa/assets'),
 

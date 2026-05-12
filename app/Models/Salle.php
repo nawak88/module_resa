@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Guava\Calendar\Contracts\Resourceable;
 use Guava\Calendar\ValueObjects\CalendarResource;
+use Modules\RH\Models\Unite;
 use Modules\Resa\Traits\HasTablePrefix;
 
 class Salle extends Model implements Resourceable
@@ -19,6 +20,8 @@ class Salle extends Model implements Resourceable
         'libelle_court',
         'libelle_long',
         'type_salle_id',
+        'unite_id',
+        'email',
         'capacite',
         'image',
         'color',
@@ -33,6 +36,11 @@ class Salle extends Model implements Resourceable
     public function typeSalle(): BelongsTo
     {
         return $this->belongsTo(TypeSalle::class, 'type_salle_id');
+    }
+
+    public function unite(): BelongsTo
+    {
+        return $this->belongsTo(Unite::class, 'unite_id');
     }
 
     public function sallePostes(): HasMany

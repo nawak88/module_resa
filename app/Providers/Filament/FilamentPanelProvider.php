@@ -64,7 +64,6 @@ class FilamentPanelProvider extends PanelProvider
             ->discoverWidgets(in: module_path($this->module, 'app/Filament/Widgets'), for: "$moduleNamespace\\Filament\\Widgets")
             ->widgets([
                 //PanelSwitcher::class,
-                CalendrierWidget::class,
                 #Widgets\AccountWidget::class,
                 #Widgets\FilamentInfoWidget::class,
             ])

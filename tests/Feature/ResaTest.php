@@ -3,9 +3,13 @@
 use App\Models\User;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Mail;
+use Modules\RH\Models\LieuUnite;
+use Modules\RH\Models\Unite;
 use Livewire\Livewire;
 use Modules\Resa\Database\Seeders\ResaDatabaseSeeder;
 use Modules\Resa\Filament\Widgets\CalendrierWidget;
+use Modules\Resa\Mail\ReservationCreee;
 use Modules\Resa\Models\Reservation;
 use Modules\Resa\Models\Salle;
 use Modules\Resa\Models\SallePoste;
@@ -706,6 +710,186 @@ describe('Salle classique', function () {
                 'typeSalleActive'  => $this->typeSalleActive,
             ])
             ->assertSuccessful();
+    });
+
+});
+
+/* ══════════════════════════════════════════════════════════════════════════════
+ * Navigation lieu / unité — résolution automatique
+ * ══════════════════════════════════════════════════════════════════════════════ */
+
+describe('CalendrierWidget — navigation lieu et unité', function () {
+
+    beforeEach(function () {
+        $this->typeSalle = TypeSalle::firstOrFail();
+    });
+
+    /* helper : crée lieu + unite + salle liés */
+    function makeLieuUniteSalle(TypeSalle $type, string $lieu, string $unite, string $salle): array
+    {
+        $l = LieuUnite::create(['libelle_court' => $lieu, 'ordre' => 1]);
+        $u = Unite::create(['libelle_court' => $unite, 'libelle_long' => $unite, 'lieu_unite_id' => $l->id]);
+        $s = Salle::create(['libelle_court' => $salle, 'type_salle_id' => $type->id, 'unite_id' => $u->id]);
+        return [$l, $u, $s];
+    }
+
+    it('affiche le choix lieu quand plusieurs lieux existent', function () {
+        makeLieuUniteSalle($this->typeSalle, 'Toulon', 'ERM', 'Salle TLN');
+        makeLieuUniteSalle($this->typeSalle, 'Brest',  'BEM', 'Salle BRT');
+
+        $widget = Livewire::actingAs($this->user)->test(CalendrierWidget::class);
+
+        $widget->assertSet('etapeNavigation', 'lieu');
+    });
+
+    it('saute le choix lieu et affiche les unités quand 1 seul lieu', function () {
+        [$lieu, , ] = makeLieuUniteSalle($this->typeSalle, 'Toulon', 'ERM', 'Salle TLN 1');
+        Unite::create(['libelle_court' => 'ECTM', 'libelle_long' => 'ECTM', 'lieu_unite_id' => $lieu->id])
+            ->salles()->create(['libelle_court' => 'Salle TLN 2', 'type_salle_id' => $this->typeSalle->id]);
+
+        $widget = Livewire::actingAs($this->user)->test(CalendrierWidget::class);
+
+        $widget->assertSet('etapeNavigation', 'unite')
+               ->assertSet('lieuActive', $lieu->id);
+    });
+
+    it('saute lieu et unité quand 1 seul lieu et 1 seule unité', function () {
+        makeLieuUniteSalle($this->typeSalle, 'Toulon', 'ERM', 'Salle A');
+        makeLieuUniteSalle($this->typeSalle, 'Toulon bis', 'ERM bis', 'Salle B');
+
+        // Forcer 1 seul lieu + 1 seule unité avec 2 salles
+        Salle::query()->delete();
+        $lieu  = LieuUnite::create(['libelle_court' => 'Unique', 'ordre' => 99]);
+        $unite = Unite::create(['libelle_court' => 'U1', 'libelle_long' => 'U1', 'lieu_unite_id' => $lieu->id]);
+        Salle::create(['libelle_court' => 'S1', 'type_salle_id' => $this->typeSalle->id, 'unite_id' => $unite->id]);
+        Salle::create(['libelle_court' => 'S2', 'type_salle_id' => $this->typeSalle->id, 'unite_id' => $unite->id]);
+
+        $widget = Livewire::actingAs($this->user)->test(CalendrierWidget::class);
+
+        // 1 lieu + 1 unite + 2 salles → doit aller à l'étape salle
+        $widget->assertSet('etapeNavigation', 'salle')
+               ->assertSet('lieuActive', $lieu->id)
+               ->assertSet('uniteActive', $unite->id);
+    });
+
+    it('ignore le flow lieu/unite si aucune salle n\'a de unite_id', function () {
+        // Les salles du seeder n'ont pas de unite_id
+        $widget = Livewire::actingAs($this->user)->test(CalendrierWidget::class);
+
+        $widget->assertSet('lieuActive', null)
+               ->assertSet('uniteActive', null);
+        // doit être sur une étape "classique" (pas lieu ni unite)
+        expect($widget->get('etapeNavigation'))->not->toBe('lieu')
+            ->and($widget->get('etapeNavigation'))->not->toBe('unite');
+    });
+
+    it('selectLieu positionne lieuActive et passe à l\'étape unite', function () {
+        [$lieu, , ] = makeLieuUniteSalle($this->typeSalle, 'Toulon', 'ERM',  'Salle TLN 1');
+        $u2 = Unite::create(['libelle_court' => 'ECTM', 'libelle_long' => 'ECTM', 'lieu_unite_id' => $lieu->id]);
+        Salle::create(['libelle_court' => 'Salle TLN 2', 'type_salle_id' => $this->typeSalle->id, 'unite_id' => $u2->id]);
+
+        makeLieuUniteSalle($this->typeSalle, 'Brest', 'BEM', 'Salle BRT');
+
+        Livewire::actingAs($this->user)
+            ->test(CalendrierWidget::class)
+            ->assertSet('etapeNavigation', 'lieu')
+            ->call('selectLieu', $lieu->id)
+            ->assertSet('lieuActive', $lieu->id)
+            ->assertSet('etapeNavigation', 'unite');
+    });
+
+    it('selectUnite positionne uniteActive et passe à l\'étape suivante', function () {
+        [$lieu, $unite, ] = makeLieuUniteSalle($this->typeSalle, 'Toulon', 'ERM', 'Salle TLN');
+        makeLieuUniteSalle($this->typeSalle, 'Brest', 'BEM', 'Salle BRT');
+
+        Livewire::actingAs($this->user)
+            ->test(CalendrierWidget::class)
+            ->call('selectLieu', $lieu->id)
+            ->call('selectUnite', $unite->id)
+            ->assertSet('uniteActive', $unite->id)
+            // 1 seule salle dans cette unité → calendrier direct
+            ->assertSet('etapeNavigation', 'calendrier')
+            ->assertSet('salleActive', Salle::where('unite_id', $unite->id)->first()->id);
+    });
+
+});
+
+/* ══════════════════════════════════════════════════════════════════════════════
+ * Notification email à la création d'une réservation
+ * ══════════════════════════════════════════════════════════════════════════════ */
+
+describe('ReservationObserver — notification email', function () {
+
+    it('envoie un email quand la salle a un email renseigné', function () {
+        Mail::fake();
+
+        $this->salle->update(['email' => 'responsable@example.com']);
+
+        Reservation::create([
+            'user_id'        => $this->user->id,
+            'salle_poste_id' => $this->poste1->id,
+            'libelle_court'  => 'Test notification',
+            'debut'          => $this->debutLibre,
+            'fin'            => $this->finLibre,
+            'validation'     => Reservation::EN_ATTENTE,
+        ]);
+
+        Mail::assertSent(ReservationCreee::class, fn ($mail) =>
+            $mail->hasTo('responsable@example.com')
+        );
+    });
+
+    it('envoie un email à chaque adresse si plusieurs séparées par virgule', function () {
+        Mail::fake();
+
+        $this->salle->update(['email' => 'alpha@example.com, beta@example.com']);
+
+        Reservation::create([
+            'user_id'        => $this->user->id,
+            'salle_poste_id' => $this->poste1->id,
+            'libelle_court'  => 'Multi-destinataires',
+            'debut'          => $this->debutLibre,
+            'fin'            => $this->finLibre,
+            'validation'     => Reservation::EN_ATTENTE,
+        ]);
+
+        Mail::assertSent(ReservationCreee::class, 2);
+        Mail::assertSent(ReservationCreee::class, fn ($mail) => $mail->hasTo('alpha@example.com'));
+        Mail::assertSent(ReservationCreee::class, fn ($mail) => $mail->hasTo('beta@example.com'));
+    });
+
+    it('n\'envoie aucun email si le champ email est null', function () {
+        Mail::fake();
+
+        $this->salle->update(['email' => null]);
+
+        Reservation::create([
+            'user_id'        => $this->user->id,
+            'salle_poste_id' => $this->poste1->id,
+            'libelle_court'  => 'Sans email',
+            'debut'          => $this->debutLibre,
+            'fin'            => $this->finLibre,
+            'validation'     => Reservation::EN_ATTENTE,
+        ]);
+
+        Mail::assertNothingSent();
+    });
+
+    it('n\'envoie aucun email si le champ email est une chaîne vide', function () {
+        Mail::fake();
+
+        $this->salle->update(['email' => '']);
+
+        Reservation::create([
+            'user_id'        => $this->user->id,
+            'salle_poste_id' => $this->poste1->id,
+            'libelle_court'  => 'Email vide',
+            'debut'          => $this->debutLibre,
+            'fin'            => $this->finLibre,
+            'validation'     => Reservation::EN_ATTENTE,
+        ]);
+
+        Mail::assertNothingSent();
     });
 
 });

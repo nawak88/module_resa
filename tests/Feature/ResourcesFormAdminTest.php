@@ -23,6 +23,8 @@ use Modules\Resa\Models\SallePoste;
 use Modules\Resa\Models\TypeCapacite;
 use Modules\Resa\Models\TypePoste;
 use Modules\Resa\Models\TypeSalle;
+use Modules\RH\Models\LieuUnite;
+use Modules\RH\Models\Unite;
 use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
@@ -236,6 +238,136 @@ describe('SalleResource — formulaires', function () {
             'id'            => $record->id,
             'libelle_court' => 'Salle modifiée',
         ]);
+    });
+
+});
+
+/* ══════════════════════════════════════════════════════════════════════════════
+ * SalleResource — lieu / unité
+ * ══════════════════════════════════════════════════════════════════════════════ */
+
+describe('SalleResource — lieu et unité', function () {
+
+    beforeEach(function () {
+        $this->lieu = LieuUnite::create([
+            'libelle_court' => 'Toulon',
+            'libelle_long'  => 'Base navale de Toulon',
+            'ordre'         => 1,
+        ]);
+
+        $this->unite = Unite::create([
+            'libelle_court' => 'ERM',
+            'libelle_long'  => 'École de réserve marine',
+            'lieu_unite_id' => $this->lieu->id,
+            'ordre'         => 1,
+        ]);
+    });
+
+    it('crée une salle avec unite_id et vérifie la persistance', function () {
+        $typeSalle = TypeSalle::firstOrFail();
+
+        Livewire::actingAs($this->admin)
+            ->test(CreateSalle::class)
+            ->fillForm([
+                'type_salle_id' => $typeSalle->id,
+                'lieu_unite_id' => $this->lieu->id,
+                'unite_id'      => $this->unite->id,
+                'code'          => 'TLN-01',
+                'libelle_court' => 'Salle Toulon 1',
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $this->assertDatabaseHas('resa_salles', [
+            'code'      => 'TLN-01',
+            'unite_id'  => $this->unite->id,
+        ]);
+    });
+
+    it('le lieu n\'est pas sauvegardé en base (champ virtuel dehydrated false)', function () {
+        $typeSalle = TypeSalle::firstOrFail();
+
+        Livewire::actingAs($this->admin)
+            ->test(CreateSalle::class)
+            ->fillForm([
+                'type_salle_id' => $typeSalle->id,
+                'lieu_unite_id' => $this->lieu->id,
+                'unite_id'      => $this->unite->id,
+                'code'          => 'TLN-02',
+                'libelle_court' => 'Salle Toulon 2',
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $salle = Salle::where('code', 'TLN-02')->firstOrFail();
+        expect($salle->unite_id)->toBe($this->unite->id);
+        expect($salle->getAttributes())->not->toHaveKey('lieu_unite_id');
+    });
+
+    it('le formulaire d\'édition pré-remplit le lieu depuis l\'unité', function () {
+        $typeSalle = TypeSalle::firstOrFail();
+        $salle = Salle::create([
+            'type_salle_id' => $typeSalle->id,
+            'unite_id'      => $this->unite->id,
+            'libelle_court' => 'Salle existante',
+            'code'          => 'TLN-99',
+        ]);
+
+        Livewire::actingAs($this->admin)
+            ->test(EditSalle::class, ['record' => $salle->id])
+            ->assertFormSet([
+                'unite_id'      => $this->unite->id,
+                'lieu_unite_id' => $this->lieu->id,
+            ]);
+    });
+
+    it('changer de lieu vide la sélection d\'unité', function () {
+        $lieu2 = LieuUnite::create([
+            'libelle_court' => 'Brest',
+            'libelle_long'  => 'Base navale de Brest',
+            'ordre'         => 2,
+        ]);
+
+        Livewire::actingAs($this->admin)
+            ->test(CreateSalle::class)
+            ->fillForm([
+                'lieu_unite_id' => $this->lieu->id,
+                'unite_id'      => $this->unite->id,
+            ])
+            ->set('data.lieu_unite_id', $lieu2->id)
+            ->assertFormSet(['unite_id' => null]);
+    });
+
+    it('la table affiche les colonnes lieu et unité', function () {
+        $typeSalle = TypeSalle::firstOrFail();
+        Salle::create([
+            'type_salle_id' => $typeSalle->id,
+            'unite_id'      => $this->unite->id,
+            'libelle_court' => 'Salle avec lieu',
+            'code'          => 'TLN-TABLE',
+        ]);
+
+        Livewire::actingAs($this->admin)
+            ->test(\Modules\Resa\Filament\Resources\SalleResource\Pages\ListSalles::class)
+            ->assertCanSeeTableRecords(Salle::all())
+            ->assertTableColumnExists('unite.lieuUnite.libelle_court')
+            ->assertTableColumnExists('unite.libelle_court');
+    });
+
+    it('le filtre par lieu restreint les résultats', function () {
+        $typeSalle = TypeSalle::firstOrFail();
+
+        $lieu2  = LieuUnite::create(['libelle_court' => 'Brest', 'ordre' => 2]);
+        $unite2 = Unite::create(['libelle_court' => 'BEM', 'libelle_long' => 'BEM', 'lieu_unite_id' => $lieu2->id]);
+
+        $salleTln  = Salle::create(['type_salle_id' => $typeSalle->id, 'unite_id' => $this->unite->id,  'libelle_court' => 'Toulon salle', 'code' => 'F-TLN']);
+        $salleBrest = Salle::create(['type_salle_id' => $typeSalle->id, 'unite_id' => $unite2->id, 'libelle_court' => 'Brest salle',  'code' => 'F-BRT']);
+
+        Livewire::actingAs($this->admin)
+            ->test(\Modules\Resa\Filament\Resources\SalleResource\Pages\ListSalles::class)
+            ->filterTable('lieu', $this->lieu->id)
+            ->assertCanSeeTableRecords(Salle::where('unite_id', $this->unite->id)->get())
+            ->assertCanNotSeeTableRecords(collect([$salleBrest]));
     });
 
 });

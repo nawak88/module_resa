@@ -19,6 +19,8 @@ use Modules\Resa\Filament\Widgets\CalendrierWidget\Actions\FiltresAction;
 use Modules\Resa\Filament\Widgets\CalendrierWidget\Actions\NouvelleResaAction;
 use Modules\Resa\Filament\Widgets\CalendrierWidget\Actions\NouvelleResaClassiqueAction;
 use Modules\Resa\Filament\Widgets\CalendrierWidget\Actions\VoirReservationAction;
+use Modules\RH\Models\LieuUnite;
+use Modules\RH\Models\Unite;
 use Modules\Resa\Models\Reservation;
 use Modules\Resa\Models\Salle;
 use Modules\Resa\Models\SallePoste;
@@ -39,7 +41,9 @@ class CalendrierWidget extends CalendarWidget
     protected bool $useFilamentTimezone = true;
 
     // Navigation
-    public string  $etapeNavigation  = 'type_salle'; // type_salle | salle | calendrier
+    public string  $etapeNavigation  = 'lieu'; // lieu | unite | type_salle | salle | calendrier
+    public ?int    $lieuActive       = null;
+    public ?int    $uniteActive      = null;
     public ?int    $typeSalleActive  = null;
     public ?int    $salleActive      = null;
 
@@ -69,8 +73,15 @@ class CalendrierWidget extends CalendarWidget
         // on ne resout pas la navigation automatiquement
         if ($this->salleActive !== null) {
             $this->etapeNavigation = 'calendrier';
+            $salle = Salle::find($this->salleActive);
             if ($this->typeSalleActive === null) {
-                $this->typeSalleActive = \Modules\Resa\Models\Salle::find($this->salleActive)?->type_salle_id;
+                $this->typeSalleActive = $salle?->type_salle_id;
+            }
+            if ($this->uniteActive === null) {
+                $this->uniteActive = $salle?->unite_id;
+            }
+            if ($this->lieuActive === null && $this->uniteActive) {
+                $this->lieuActive = Unite::find($this->uniteActive)?->lieu_unite_id;
             }
             return;
         }
@@ -82,10 +93,55 @@ class CalendrierWidget extends CalendarWidget
 
     private function resoudreNavigation(): void
     {
-        $salles     = Salle::with('typeSalle')->orderBy('ordre')->get();
-        $typeSalles = TypeSalle::orderBy('ordre')->get();
+        // Si aucune salle n'a de unite_id → ancien comportement sans lieu/unite
+        if (! Salle::whereNotNull('unite_id')->exists()) {
+            $this->resoudreDepuisUnite();
+            return;
+        }
 
-        // 1 seule salle au total → calendrier direct
+        $lieuIds = Unite::whereIn('id', Salle::whereNotNull('unite_id')->pluck('unite_id'))
+            ->pluck('lieu_unite_id')->unique();
+        $lieux = LieuUnite::whereIn('id', $lieuIds)->orderBy('ordre')->get();
+
+        if ($lieux->count() > 1) {
+            $this->etapeNavigation = 'lieu';
+            return;
+        }
+
+        if ($lieux->count() === 1) {
+            $this->lieuActive = $lieux->first()->id;
+        }
+
+        $this->resoudreDepuisLieu();
+    }
+
+    private function resoudreDepuisLieu(): void
+    {
+        $sallesAvecUnite = Salle::whereNotNull('unite_id')->pluck('unite_id');
+        $query = Unite::whereIn('id', $sallesAvecUnite)->orderBy('ordre');
+
+        if ($this->lieuActive) {
+            $query->where('lieu_unite_id', $this->lieuActive);
+        }
+
+        $unites = $query->get();
+
+        if ($unites->count() > 1) {
+            $this->etapeNavigation = 'unite';
+            return;
+        }
+
+        if ($unites->count() === 1) {
+            $this->uniteActive = $unites->first()->id;
+        }
+
+        $this->resoudreDepuisUnite();
+    }
+
+    private function resoudreDepuisUnite(): void
+    {
+        $salles = $this->getSallesScope()->with('typeSalle')->orderBy('ordre')->get();
+
         if ($salles->count() === 1) {
             $this->salleActive     = $salles->first()->id;
             $this->typeSalleActive = $salles->first()->type_salle_id;
@@ -93,15 +149,51 @@ class CalendrierWidget extends CalendarWidget
             return;
         }
 
-        // Plusieurs salles, 1 seul type de salle → liste salles directement
+        $typeSalles = TypeSalle::whereIn('id', $salles->pluck('type_salle_id')->unique())->orderBy('ordre')->get();
+
         if ($typeSalles->count() === 1) {
             $this->typeSalleActive = $typeSalles->first()->id;
             $this->etapeNavigation = 'salle';
             return;
         }
 
-        // Plusieurs types de salles → choix du type d'abord
         $this->etapeNavigation = 'type_salle';
+    }
+
+    public function getSallesScopePublic(): \Illuminate\Database\Eloquent\Builder
+    {
+        return $this->getSallesScope();
+    }
+
+    private function getSallesScope(): \Illuminate\Database\Eloquent\Builder
+    {
+        $query = Salle::query();
+
+        if ($this->uniteActive) {
+            $query->where('unite_id', $this->uniteActive);
+        } elseif ($this->lieuActive) {
+            $uniteIds = Unite::where('lieu_unite_id', $this->lieuActive)->pluck('id');
+            $query->whereIn('unite_id', $uniteIds);
+        }
+
+        return $query;
+    }
+
+    /* ── Sélection lieu ──────────────────────────────────────────────────── */
+
+    public function selectLieu(int $id): void
+    {
+        $this->lieuActive  = $id;
+        $this->uniteActive = null;
+        $this->resoudreDepuisLieu();
+    }
+
+    /* ── Sélection unité ─────────────────────────────────────────────────── */
+
+    public function selectUnite(int $id): void
+    {
+        $this->uniteActive = $id;
+        $this->resoudreDepuisUnite();
     }
 
     /* ── Sélection type salle ─────────────────────────────────────────────── */
@@ -110,8 +202,7 @@ class CalendrierWidget extends CalendarWidget
     {
         $this->typeSalleActive = $id;
 
-        // Si 1 seule salle dans ce type → aller direct au calendrier
-        $salles = Salle::where('type_salle_id', $id)->get();
+        $salles = $this->getSallesScope()->where('type_salle_id', $id)->get();
         if ($salles->count() === 1) {
             $this->salleActive     = $salles->first()->id;
             $this->etapeNavigation = 'calendrier';
@@ -125,6 +216,7 @@ class CalendrierWidget extends CalendarWidget
     public function selectSalle(int $id): void
     {
         $this->salleActive     = $id;
+        $this->typeSalleActive = Salle::find($id)?->type_salle_id ?? $this->typeSalleActive;
         $this->etapeNavigation = 'calendrier';
         $this->filtrePostes    = [];
         $this->filtreCapacites = [];
@@ -145,6 +237,21 @@ class CalendrierWidget extends CalendarWidget
         $this->etapeNavigation = 'type_salle';
     }
 
+    public function retourUnites(): void
+    {
+        $this->salleActive     = null;
+        $this->typeSalleActive = null;
+        $this->etapeNavigation = 'unite';
+    }
+
+    public function retourLieux(): void
+    {
+        $this->salleActive     = null;
+        $this->typeSalleActive = null;
+        $this->uniteActive     = null;
+        $this->etapeNavigation = 'lieu';
+    }
+
     /* ── Mode de la salle active ──────────────────────────────────────────── */
 
     public function getModeActif(): string
@@ -161,22 +268,6 @@ class CalendrierWidget extends CalendarWidget
     public function isModeSimulateur(): bool
     {
         return $this->getModeActif() === TypeSalle::MODE_SIMULATEUR;
-    }
-
-    /* ── Rendu conditionnel ───────────────────────────────────────────────── */
-
-    public function render(): \Illuminate\Contracts\View\View
-    {
-        return match ($this->etapeNavigation) {
-            'type_salle' => view('resa::filament.widgets.type-salle-selection', [
-                'typeSalles' => TypeSalle::orderBy('ordre')->get(),
-            ]),
-            'salle' => view('resa::filament.widgets.salle-selection', [
-                'salles'    => Salle::where('type_salle_id', $this->typeSalleActive)->orderBy('ordre')->get(),
-                'typeSalle' => TypeSalle::find($this->typeSalleActive),
-            ]),
-            default => parent::render(),
-        };
     }
 
     public function getHeading(): ?string
@@ -369,25 +460,40 @@ class CalendrierWidget extends CalendarWidget
     {
         $actions = [];
 
-        // Bouton retour selon l'etape
         if ($this->etapeNavigation === 'calendrier') {
-            // Retour salles si plusieurs salles dans le type
-            $nbSalles = Salle::where('type_salle_id', $this->typeSalleActive)->count();
+            $nbSalles    = $this->getSallesScope()->where('type_salle_id', $this->typeSalleActive)->count();
+            $nbTypes     = TypeSalle::whereIn('id', $this->getSallesScope()->pluck('type_salle_id')->unique())->count();
+            $nbUnites    = $this->uniteActive ? 0 : ($this->lieuActive
+                ? Unite::where('lieu_unite_id', $this->lieuActive)->whereIn('id', Salle::whereNotNull('unite_id')->pluck('unite_id'))->count()
+                : 0);
+            $nbLieux     = LieuUnite::whereIn('id',
+                Unite::whereIn('id', Salle::whereNotNull('unite_id')->pluck('unite_id'))->pluck('lieu_unite_id')->unique()
+            )->count();
+
             if ($nbSalles > 1) {
                 $actions[] = Action::make('retour_salle')
                     ->label('Changer de salle')
                     ->color('gray')
                     ->icon('heroicon-o-arrow-left')
                     ->action(fn () => $this->retourSalles());
-            }
-
-            // Retour type salles si plusieurs types
-            if (TypeSalle::count() > 1 && $nbSalles === 1) {
+            } elseif ($nbTypes > 1) {
                 $actions[] = Action::make('retour_type_salle')
                     ->label('Changer de type')
                     ->color('gray')
                     ->icon('heroicon-o-arrow-left')
                     ->action(fn () => $this->retourTypeSalles());
+            } elseif ($nbUnites > 1) {
+                $actions[] = Action::make('retour_unite')
+                    ->label('Changer d\'unité')
+                    ->color('gray')
+                    ->icon('heroicon-o-arrow-left')
+                    ->action(fn () => $this->retourUnites());
+            } elseif ($nbLieux > 1) {
+                $actions[] = Action::make('retour_lieu')
+                    ->label('Changer de lieu')
+                    ->color('gray')
+                    ->icon('heroicon-o-arrow-left')
+                    ->action(fn () => $this->retourLieux());
             }
         }
 
