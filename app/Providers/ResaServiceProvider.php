@@ -7,13 +7,10 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 use Nwidart\Modules\Traits\PathNamespace;
 use Filament\Support\Facades\FilamentAsset;
-use Filament\Support\Assets\Js;
-use Filament\Support\Assets\Css;
 use Modules\Resa\Models;
 use Modules\Resa\Policies;
 use App\Filament\PanelRegistry\DirectMenuItem;
 use App\Filament\PanelRegistry\ModuleDefinedMenusRegistry;
-use App\Filament\PanelRegistry\ModuleDefinedPreferedPagesRegistry;
 use Modules\Resa\Filament\Resources\ReservationResource;
 
 class ResaServiceProvider extends ServiceProvider

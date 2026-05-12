@@ -22,7 +22,8 @@ class TypeSalleResource extends Resource
     protected static string|\UnitEnum|null $navigationGroup = 'Gestion';
     protected static ?int                    $navigationSort  = 5;
 
-    protected static ?string $recordTitleAttribute = 'TypeSalle';
+    //protected static ?string $recordTitleAttribute = 'TypeSalle';
+    protected static ?string $recordTitleAttribute = 'libelle_court';
 
     public static function form(Schema $schema): Schema
     {

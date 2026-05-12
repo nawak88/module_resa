@@ -3,6 +3,7 @@
 namespace Modules\Resa\Filament\Widgets;
 
 use Filament\Actions\Action;
+use Guava\Calendar\Enums\CalendarViewType;
 use Guava\Calendar\Filament\CalendarWidget;
 use Guava\Calendar\ValueObjects\DateClickInfo;
 use Guava\Calendar\ValueObjects\DateSelectInfo;
@@ -25,6 +26,10 @@ use Modules\Resa\Models\TypeSalle;
 
 class CalendrierWidget extends CalendarWidget
 {
+    protected string $view = 'resa::filament.widgets.calendrier-widget';
+
+    protected CalendarViewType $calendarView = CalendarViewType::TimeGridWeek;
+
     protected bool $eventClickEnabled  = true;
     protected bool $eventDragEnabled   = true;
     protected bool $eventResizeEnabled = true;
@@ -110,7 +115,6 @@ class CalendrierWidget extends CalendarWidget
         if ($salles->count() === 1) {
             $this->salleActive     = $salles->first()->id;
             $this->etapeNavigation = 'calendrier';
-            $this->refreshRecords();
         } else {
             $this->etapeNavigation = 'salle';
         }
@@ -124,7 +128,6 @@ class CalendrierWidget extends CalendarWidget
         $this->etapeNavigation = 'calendrier';
         $this->filtrePostes    = [];
         $this->filtreCapacites = [];
-        $this->refreshRecords();
     }
 
     /* ── Retours ──────────────────────────────────────────────────────────── */
@@ -326,18 +329,18 @@ class CalendrierWidget extends CalendarWidget
                 'endTime'    => '17:00',
             ],
             'selectConstraint' => 'businessHours',
-            'initialView'      => 'timeGridWeek',
             'headerToolbar'    => [
                 'start'  => 'prev,next today',
                 'center' => 'title',
-                'end'    => 'dayGridMonth,timeGridWeek,timeGridDay,listDay',
+                'end'    => 'timeGridDay,timeGridWeek,dayGridMonth,listWeek,listMonth',
             ],
             'buttonText' => [
                 'today'        => "Aujourd'hui",
-                'dayGridMonth' => 'Mois',
-                'timeGridWeek' => 'Semaine',
                 'timeGridDay'  => 'Jour',
-                'listDay'      => 'Agenda',
+                'timeGridWeek' => 'Semaine',
+                'dayGridMonth' => 'Mois',
+                'listWeek'     => 'Liste sem.',
+                'listMonth'    => 'Liste mois',
             ],
             'locale'      => 'fr',
             'slotMinTime' => '08:00:00',

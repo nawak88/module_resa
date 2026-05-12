@@ -26,7 +26,7 @@ use Filament\FontProviders\SpatieGoogleFontProvider;
 use Filament\Navigation\NavigationItem;
 
 use App\Filament\AvatarProviders\SkeletorAvatarProvider;
-use App\Filament\Widgets\PanelSwitcher;
+use Modules\Resa\Filament\Widgets\PanelSwitcher;
 use App\Providers\Filament\Traits\UsesSkeletorPrefixAndMultitenancyTrait;
 
 use App\Http\Middleware\InitializeTenancyByPath;
