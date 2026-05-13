@@ -23,7 +23,7 @@ class TypeCapaciteResource extends Resource
     protected static ?int                    $navigationSort  = 5;
 
     //protected static ?string $recordTitleAttribute = 'TypeCapacite';
-    protected static ?string $recordTitleAttribute = 'libelle_court';
+    // protected static ?string $recordTitleAttribute = 'libelle_court';
 
     public static function form(Schema $schema): Schema
     {

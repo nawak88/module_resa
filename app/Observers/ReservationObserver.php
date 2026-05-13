@@ -3,7 +3,7 @@
 namespace Modules\Resa\Observers;
 
 use Illuminate\Support\Facades\Mail;
-use Modules\Resa\Mail\ReservationCreee;
+use Modules\Resa\Mail\ReservationCree;
 use Modules\Resa\Models\Reservation;
 
 class ReservationObserver
@@ -19,7 +19,7 @@ class ReservationObserver
         $emails = array_filter(array_map('trim', explode(',', $salle->email)));
 
         foreach ($emails as $email) {
-            Mail::to($email)->send(new ReservationCreee($reservation));
+            Mail::to($email)->send(new ReservationCree($reservation));
         }
     }
 }

@@ -34,10 +34,12 @@ Etend `Guava\Calendar\Filament\CalendarWidget` (Guava v2.1.1) integrant FullCale
 
 | Propriete | Type | Description |
 |---|---|---|
-| `$etapeNavigation` | `string` | `type_salle` / `salle` / `calendrier` |
+| `$etapeNavigation` | `string` | `lieu` / `unite` / `type_salle` / `salle` / `calendrier` |
+| `$lieuActive` | `?int` | ID du LieuUnite selectionne |
+| `$uniteActive` | `?int` | ID de l'Unite selectionnee |
 | `$typeSalleActive` | `?int` | ID du TypeSalle selectionne |
 | `$salleActive` | `?int` | ID de la salle affichee |
-| `$adminMode` | `bool` | Active si permission `resa::reservation.view` |
+| `$adminMode` | `bool` | Active si `resa::admin`, `resa::reservation.view` OU `resa::gestionnaire_salle` |
 | `$recordEnCours` | `?int` | ID de la reservation ouverte dans le modal |
 | `$recordTitre` | `?string` | Titre sauvegarde au clic — evite le 404 apres suppression |
 | `$etapeDebut` | `?string` | Debut du creneau transmis entre les etapes Wizard |
@@ -55,32 +57,45 @@ Etend `Guava\Calendar\Filament\CalendarWidget` (Guava v2.1.1) integrant FullCale
 Appelee dans `mount()`. Determine automatiquement le point d'entree selon la configuration.
 
 ```
-1 seule salle au total
+Aucune salle avec unite_id
+    → navigation classique (type_salle → salle → calendrier)
+
+Salles avec unite_id — plusieurs lieux
+    → etapeNavigation = 'lieu'
+
+Salles avec unite_id — 1 seul lieu, plusieurs unites
+    → lieuActive = lieu.id
+    → etapeNavigation = 'unite'
+
+1 seul lieu + 1 seule unite, plusieurs salles
+    → lieuActive, uniteActive positionnes
+    → etapeNavigation = 'salle' ou 'type_salle' selon TypeSalles presents
+
+1 seule salle dans la chaine
     → salleActive = salle.id
-    → typeSalleActive = salle.type_salle_id
     → etapeNavigation = 'calendrier'
-
-Plusieurs salles, 1 seul TypeSalle
-    → typeSalleActive = typeSalle.id
-    → etapeNavigation = 'salle'
-
-Plusieurs TypeSalles
-    → etapeNavigation = 'type_salle'
 ```
 
+**Important :** `getSallesScope()` avec `lieuActive` sans `uniteActive` filtre **uniquement** les salles liees a ce lieu (`whereIn('unite_id', ...)`). Les salles sans `unite_id` (salles classiques sans rattachement geographique) n'apparaissent qu'une fois une unite selectionnee (`orWhereNull('unite_id')` uniquement quand `uniteActive` est defini).
+
 ```php
+public function selectLieu(int $id): void
+// → lieuActive = id, resoudreDepuisLieu()
+
+public function selectUnite(int $id): void
+// → uniteActive = id, resoudreDepuisUnite()
+
 public function selectTypeSalle(int $id): void
 // Si 1 seule salle dans ce type → calendrier direct
-// Sinon → liste des salles
 
 public function selectSalle(int $id): void
+// → typeSalleActive = salle.type_salle_id
 // → etapeNavigation = 'calendrier'
 
+public function retourLieux(): void
+public function retourUnites(): void
 public function retourSalles(): void
-// → etapeNavigation = 'salle'
-
 public function retourTypeSalles(): void
-// → etapeNavigation = 'type_salle'
 ```
 
 ---
@@ -278,3 +293,6 @@ Entrainement FPV
 
 !!! info "refreshRecords()"
     Methode Guava qui force le rechargement depuis `getEvents()`. Appeler apres toute creation, suppression ou changement de validation.
+
+
+

@@ -45,7 +45,10 @@ class ReservationResource extends Resource
 
     public static function canAccess(): bool
     {
-        return auth()->check() && auth()->user()->canAny(['resa::reservation.index']);
+        $user = auth()->user();
+        return $user?->can('resa::reservation.index')
+            || $user?->can('resa::admin')
+            || $user?->can('resa::gestionnaire_salle');
     }
 
     /* ── Formulaire ───────────────────────────────────────────────────────── */
@@ -188,7 +191,7 @@ class ReservationResource extends Resource
                     ->requiresConfirmation(fn (Reservation $record) => ! $record->isValide())
                     ->modalHeading('Valider la reservation ?')
                     ->modalDescription(fn (Reservation $record) => 'Confirmer la validation de « ' . $record->libelle_court . ' » ?')
-                    ->visible(fn () => auth()->user()?->can('resa::validation_salle'))
+                    ->visible(fn (Reservation $record) => auth()->user()?->can('valider', $record))
                     ->action(function (Reservation $record): void {
                         $record->isValide()
                             ? $record->invalider()
@@ -212,7 +215,7 @@ class ReservationResource extends Resource
                         ->icon('heroicon-o-check-circle')
                         ->color('success')
                         ->requiresConfirmation()
-                        ->visible(fn () => auth()->user()?->can('resa::validation_salle'))
+                        ->visible(fn () => auth()->user()?->can('resa::admin') || auth()->user()?->can('resa::gestionnaire_salle'))
                         ->action(function (Collection $records): void {
                             $records->each(fn (Reservation $record) =>
                                 $record->valider(auth()->user())
@@ -229,7 +232,7 @@ class ReservationResource extends Resource
                         ->icon('heroicon-o-x-circle')
                         ->color('warning')
                         ->requiresConfirmation()
-                        ->visible(fn () => auth()->user()?->can('resa::validation_salle'))
+                        ->visible(fn () => auth()->user()?->can('resa::admin') || auth()->user()?->can('resa::gestionnaire_salle'))
                         ->action(function (Collection $records): void {
                             $records->each(fn (Reservation $record) => $record->invalider());
 
@@ -264,7 +267,20 @@ class ReservationResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()
+        $user  = auth()->user();
+        $query = parent::getEloquentQuery()
             ->with(['user', 'sallePoste.salle', 'validatedBy']);
+
+        if ($user?->can('resa::admin') || $user?->can('resa::reservation.index')) {
+            return $query;
+        }
+
+        // Gestionnaire : uniquement les réservations de ses salles
+        $salleIds = Salle::whereHas('gestionnaires', fn ($q) => $q->where('user_id', $user?->id))->pluck('id');
+
+        return $query->whereHas(
+            'sallePoste',
+            fn ($q) => $q->whereIn('salle_id', $salleIds)
+        );
     }
 }

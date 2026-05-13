@@ -1,6 +1,7 @@
 <?php
 namespace Modules\Resa\Models;
 
+use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -43,6 +44,16 @@ class Salle extends Model implements Resourceable
         return $this->belongsTo(Unite::class, 'unite_id');
     }
 
+    public function gestionnaires(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class, 'resa_salle_gestionnaires', 'salle_id', 'user_id');
+    }
+
+    public function isGestionnaire(User $user): bool
+    {
+        return $this->gestionnaires()->where('user_id', $user->id)->exists();
+    }
+
     public function sallePostes(): HasMany
     {
         return $this->hasMany(SallePoste::class, 'salle_id')->orderBy('ordre');
@@ -65,3 +76,5 @@ class Salle extends Model implements Resourceable
             ->title($this->libelle_court ?? '');
     }
 }
+
+

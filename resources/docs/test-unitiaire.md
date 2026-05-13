@@ -26,11 +26,13 @@ Modules/Resa/tests/Feature/ResaTest.php
 
 ---
 
-## Structure des tests — 28 tests
+## Structure des tests — 50+ tests
 
-Les tests sont organises en 4 groupes.
+Les tests sont organises en 7 groupes dans 3 fichiers.
 
-### Visiteur non connecte (3 tests)
+### `ResaTest.php` — comportement calendrier
+
+#### Visiteur non connecte (3 tests)
 
 | Test | Ce qui est verifie |
 |---|---|
@@ -38,44 +40,104 @@ Les tests sont organises en 4 groupes.
 | Ne voit pas le bouton de reservation | "Se connecter pour reserver" present, "Nouvelle reservation" absent |
 | Voit uniquement les reservations validees | `validation = 1` visible, `validation = 0` masquee |
 
-### Utilisateur connecte (9 tests)
+#### Utilisateur connecte (9 tests)
 
 | Test | Ce qui est verifie |
 |---|---|
 | Voit le bouton nouvelle reservation | Bouton present si connecte |
-| Voit les reservations validees et les siennes en attente | Filtre correct — en attente des autres masquees |
-| Peut creer une reservation sur un creneau libre | Reservation creee avec `validation = 0` |
-| Ne peut pas reserver sur un creneau deja pris | Chevauchement bloque par `isDisponible()` |
-| Peut supprimer sa reservation en attente | `isEnAttente() = true` + suppression OK |
-| Ne peut pas supprimer une reservation validee | `isEnAttente() = false` donc `canModify = false` |
-| Ne peut pas reserver le week-end | `validerCreneau()` retourne une erreur |
-| Ne peut pas reserver avant 08h00 | Heure de debut invalide |
-| Ne peut pas reserver apres 17h00 | Heure de fin invalide |
+| Voit ses reservations en attente | Ses propres en attente visibles, celles des autres non |
+| Peut creer une reservation | `validation = 0` |
+| Ne peut pas reserver sur creneau pris | `isDisponible()` bloque |
+| Peut supprimer sa reservation en attente | Suppression OK |
+| Ne peut pas supprimer une validee | `canModify = false` |
+| Ne peut pas reserver le week-end | `validerCreneau()` retourne erreur |
+| Ne peut pas reserver avant 08h00 | Heure invalide |
+| Ne peut pas reserver apres 17h00 | Heure invalide |
 
-### Admin (5 tests)
-
-| Test | Ce qui est verifie |
-|---|---|
-| Voit toutes les reservations y compris en attente | Pas de filtre sur `validation` |
-| Peut valider une reservation en attente | `validation = 1`, `validated_by` renseigne |
-| Peut invalider une reservation validee | `validation = 0`, `validated_by = null` |
-| Peut creer une reservation pour un autre user | `user_id` different de l'admin, `validation = 1` directe |
-| Peut supprimer une reservation validee | Suppression possible meme sur `validation = 1` |
-
-### Salle classique (9 tests)
+#### Admin (5 tests)
 
 | Test | Ce qui est verifie |
 |---|---|
-| TypeSalle en mode classique | `isClassique() = true`, `isSimulateur() = false` |
-| Poste fictif existe et est system | `isSystem() = true`, `libelle_court = 'Salle entiere'` |
-| Peut reserver la salle entiere sur creneau libre | `isDisponible() = true` + `Reservation::create()` |
-| Ne peut pas reserver si salle deja occupee | `isDisponible() = false` sur chevauchement |
-| Deux users ne peuvent pas reserver en meme temps | `isDisponible() = false` pour le second user |
-| Peut reserver des creneaux non chevauchants | Matin (08h-10h) et apres-midi (13h-15h) OK |
-| Capacites utilisees vides | `capacites_utilisees = []` toujours en mode classique |
-| Poste fictif exclu des ressources calendrier | `where('libelle_court', '!=', 'Salle entiere')` retourne vide |
-| Admin peut valider une reservation classique | `valider()` fonctionne identiquement |
-| Regles horaires applicables en mode classique | Week-end et hors horaires bloques |
+| Voit toutes les reservations | Pas de filtre `validation` |
+| Peut valider | `validation = 1`, `validated_by` renseigne |
+| Peut invalider | `validation = 0`, `validated_by = null` |
+| Peut reserver pour un tiers | `user_id` != admin, directement validee |
+| Peut supprimer une validee | Suppression OK |
+
+#### Salle classique (9 tests)
+
+| Test | Ce qui est verifie |
+|---|---|
+| Mode classique detecte | `isClassique() = true` |
+| Poste fictif system | `isSystem() = true` |
+| Reservation salle entiere libre | `isDisponible() = true` |
+| Chevauchement bloque | `isDisponible() = false` |
+| Deux users simultanes bloques | Second `isDisponible() = false` |
+| Creneaux non chevauchants OK | Matin + apres-midi |
+| `capacites_utilisees` vides | `[]` en mode classique |
+| Poste fictif hors ressources | Exclu de `getResources()` |
+| Admin valide reservation classique | `valider()` fonctionne |
+
+#### CalendrierWidget — navigation lieu et unite (7 tests)
+
+| Test | Ce qui est verifie |
+|---|---|
+| Plusieurs lieux → choix lieu affiché | `etapeNavigation = 'lieu'` |
+| 1 seul lieu, 2 unites → saute à unite | `lieuActive` positionne, `etapeNavigation = 'unite'` |
+| 1 seul lieu, 1 seule unite → saute à salle | `lieuActive`, `uniteActive` positionnes |
+| Aucune salle avec `unite_id` → flow classique | `lieuActive = null`, `uniteActive = null` |
+| Plusieurs lieux + 1 lieu/1 unite → saute lieu et unite | `etapeNavigation = 'salle'` apres auto-resolution |
+| `selectLieu()` positionne et passe à unite | `lieuActive = id`, `etapeNavigation = 'unite'` |
+| `selectUnite()` positionne et passe à l'etape suivante | `uniteActive = id` |
+
+#### ReservationObserver — notification email (4 tests)
+
+| Test | Ce qui est verifie |
+|---|---|
+| Email renseigne → 1 envoi | `Mail::assertSent(ReservationCree)` |
+| Virgule → 2 envois | `Mail::assertSent(..., 2)` |
+| Email null → aucun envoi | `Mail::assertNothingSent()` |
+| Email vide → aucun envoi | `Mail::assertNothingSent()` |
+
+---
+
+### `ResourcesAdminTest.php` — acces HTTP ressources
+
+Pages `index`, `create`, `edit` des 6 resources testees avec `actingAs($admin)` → 200.
+
+#### Gestionnaire de salle (12 tests)
+
+| Test | Ce qui est verifie |
+|---|---|
+| Admin peut attribuer un gestionnaire | `isGestionnaire() = true` apres `attach()` |
+| Admin peut retirer un gestionnaire | `isGestionnaire() = false` apres `detach()` |
+| Plusieurs gestionnaires sur la meme salle | `gestionnaires()->count() = 2` |
+| `isGestionnaire()` false si non assigne | Controle negatif |
+| Gestionnaire peut valider sa salle | `can('valider', $resa) = true` + `valider()` OK |
+| Gestionnaire ne peut pas valider autre salle | `can('valider', $resa) = false` |
+| Gestionnaire peut invalider sa salle | `invalider()` OK |
+| Gestionnaire peut supprimer reservation en attente | Suppression OK |
+| Gestionnaire peut modifier reservation | `update()` OK |
+| Gestionnaire peut modifier sa salle | `can('update', $salle) = true` |
+| Gestionnaire ne peut pas modifier autre salle | `can('update', $autreSalle) = false` |
+| Admin peut tout valider | `can('valider') = true` quelle que soit la salle |
+
+---
+
+### `ResourcesFormTest.php` — formulaires Filament
+
+Forms `create` et `edit` valides et invalides, dont :
+
+#### SalleResource — lieu et unite (6 tests)
+
+| Test | Ce qui est verifie |
+|---|---|
+| Creation avec `unite_id` | `unite_id` en base |
+| Edition pre-remplit `lieu_unite_id` | `afterStateHydrated()` |
+| Changer lieu remet `unite_id` à null | `afterStateUpdated()` |
+| Table affiche lieu et unite | Colonnes visibles |
+| Filtre par lieu restreint | `whereHas('unite')` |
+| Filtre vide retourne tout | Pas de filtre applique |
 
 ---
 
@@ -87,13 +149,13 @@ Chaque test repart d'une base vide (`RefreshDatabase`).
 beforeEach(function () {
     // Permissions guard web
     Permission::findOrCreate('resa::reservation.view', 'web');
-    Permission::findOrCreate('resa::validation_salle',  'web');
+    Permission::findOrCreate('resa::admin', 'web');
 
     // Users
     $this->user  = User::factory()->create();
     $this->admin = User::factory()->create(['admin' => 1]);
     $this->admin->givePermissionTo('resa::reservation.view');
-    $this->admin->givePermissionTo('resa::validation_salle');
+    $this->admin->givePermissionTo('resa::admin');
 
     // Structure BDD via seeders du module
     $this->seed(ResaDatabaseSeeder::class);
@@ -237,8 +299,9 @@ Livewire::test(CalendrierWidget::class, [
 
 | Permission | Role dans le widget |
 |---|---|
-| `resa::reservation.view` | Active `$adminMode` — voit tout, valide directement |
-| `resa::validation_salle` | Autorise les actions valider/invalider |
+| `resa::reservation.view` | Voit toutes les reservations |
+| `resa::admin` | Active `$adminMode`, autorise valider/invalider sur toutes les salles |
+| `resa::gestionnaire_salle` | Active `$adminMode`, valider/invalider uniquement sur ses salles |
 
 ---
 

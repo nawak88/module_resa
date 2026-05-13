@@ -67,7 +67,13 @@ class CalendrierWidget extends CalendarWidget
 
     public function mount(): void
     {
-        $this->adminMode = auth()->user()?->can('resa::reservation.view') ?? false;
+        $user = auth()->user();
+        $this->adminMode = $user?->can('resa::reservation.view') ?? false;
+
+        // Un gestionnaire de salle a aussi accès au mode admin pour sa salle
+        if (!$this->adminMode && $user?->can('resa::gestionnaire_salle')) {
+            $this->adminMode = true;
+        }
 
         // Si salleActive est deja defini (injection de tests ou lien direct)
         // on ne resout pas la navigation automatiquement
@@ -170,7 +176,10 @@ class CalendrierWidget extends CalendarWidget
         $query = Salle::query();
 
         if ($this->uniteActive) {
-            $query->where('unite_id', $this->uniteActive);
+            $query->where(fn ($q) => $q
+                ->where('unite_id', $this->uniteActive)
+                ->orWhereNull('unite_id')
+            );
         } elseif ($this->lieuActive) {
             $uniteIds = Unite::where('lieu_unite_id', $this->lieuActive)->pluck('id');
             $query->whereIn('unite_id', $uniteIds);

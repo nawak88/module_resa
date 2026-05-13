@@ -9,7 +9,7 @@ use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 use Modules\Resa\Models\Reservation;
 
-class ReservationCreee extends Mailable
+class ReservationCree extends Mailable
 {
     use Queueable, SerializesModels;
 
@@ -25,7 +25,7 @@ class ReservationCreee extends Mailable
     public function content(): Content
     {
         return new Content(
-            view: 'resa::mail.reservation-creee',
+            view: 'resa::mail.reservation-cree',
         );
     }
 }

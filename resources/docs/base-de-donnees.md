@@ -33,11 +33,17 @@ erDiagram
         string libelle_court
         text libelle_long
         int type_salle_id FK
+        int unite_id FK
+        string email
         int capacite
         string image
         string color
         int ordre
         json data
+    }
+    SalleGestionnaire {
+        int salle_id FK
+        int user_id FK
     }
     TypePoste {
         int id PK
@@ -86,6 +92,7 @@ erDiagram
 
     TypeSalle ||--o{ Salle : "definit"
     Salle ||--o{ SallePoste : "contient"
+    Salle ||--o{ SalleGestionnaire : "gere par"
     TypePoste ||--o{ SallePoste : "caracterise"
     SallePoste ||--o{ PosteCapacite : "propose"
     TypeCapacite ||--o{ PosteCapacite : "disponible sur"
@@ -135,12 +142,38 @@ Salles physiques rattachees a un type.
 | `libelle_court` | string(500) | oui | Nom affiche |
 | `libelle_long` | text | oui | Description |
 | `type_salle_id` | int FK | non | → `resa_type_salles` (`restrictOnDelete`) |
+| `unite_id` | int FK | oui | → `rh_unites` — rattachement geographique (module RH) |
+| `email` | string(500) | oui | Adresse(s) email de notification — plusieurs separees par virgule |
 | `capacite` | int | oui | Capacite max (personnes) — indicatif pour le mode classique |
 | `image` | string | oui | Chemin image (`storage/resa/salles/`) |
 | `color` | string | oui | Couleur d'affichage Filament |
 | `ordre` | int | non | Ordre d'affichage (defaut 0) |
 | `data` | json | oui | Donnees libres extensibles |
 | `created_at` / `updated_at` | datetime | — | Timestamps Laravel |
+
+**Relations Eloquent :**
+
+```php
+$salle->gestionnaires()  // BelongsToMany User via resa_salle_gestionnaires
+$salle->isGestionnaire($user) // bool — verifie si l'user gere cette salle
+```
+
+---
+
+### `resa_salle_gestionnaires`
+
+Table pivot reliant les salles a leurs gestionnaires.
+
+| Colonne | Type | Nullable | Description |
+|---|---|---|---|
+| `salle_id` | int FK | non | → `resa_salles` (`cascadeOnDelete`) |
+| `user_id` | int FK | non | → `users` |
+
+Cle primaire composite `(salle_id, user_id)`. Pas d'auto-increment.
+
+Une salle peut avoir plusieurs gestionnaires. Un gestionnaire peut gerer plusieurs salles.
+
+Quand un gestionnaire est attribue depuis `SalleResource`, la permission `resa::gestionnaire_salle` lui est automatiquement accordee via `afterSave()` / `afterCreate()`.
 
 ---
 
@@ -288,6 +321,7 @@ INDEX (user_id, validation)          -- filtrage par user et statut
 | `TypeSalle` → `Salle` | hasMany | Un type couvre plusieurs salles |
 | `Salle` → `TypeSalle` | belongsTo | Une salle a un type |
 | `Salle` → `SallePoste` | hasMany | Une salle a plusieurs postes |
+| `Salle` ↔ `User` | belongsToMany | Via `resa_salle_gestionnaires` |
 | `SallePoste` → `Salle` | belongsTo | Un poste appartient a une salle |
 | `SallePoste` → `TypePoste` | belongsTo | Un poste a un type |
 | `SallePoste` ↔ `TypeCapacite` | belongsToMany | Via `resa_poste_capacites` |

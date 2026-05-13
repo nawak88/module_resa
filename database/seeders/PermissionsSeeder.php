@@ -13,9 +13,9 @@ class PermissionsSeeder extends Seeder
     {
         // Permissions spécifiques hors-ressource
         $specific = [
-            'resa::validation_salle', // resa::reservation.valider
-            'resa::reservation.view', // resa::reservation.voir
-           
+            'resa::admin',              // admin du module — valide toutes les réservations
+            'resa::gestionnaire_salle', // gestionnaire — valide uniquement ses salles assignées
+            'resa::reservation.view',   // voir toutes les réservations
         ];
 
         foreach ($specific as $name) {

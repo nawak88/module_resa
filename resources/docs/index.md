@@ -22,7 +22,8 @@ La Force d'Action Navale dispose de salles de simulation equipees de postes spec
 |---|---|
 | Visiteur non connecte | Consulte le calendrier en lecture seule |
 | Utilisateur connecte | Reserve un creneau selon le mode de la salle |
-| Admin | Valide, modifie, cree des reservations pour des tiers |
+| Gestionnaire de salle | Valide les reservations de ses salles assignees, cree postes et capacites |
+| Admin (`resa::admin`) | Acces complet — toutes les salles, toutes les reservations |
 
 ---
 
@@ -43,17 +44,18 @@ La Force d'Action Navale dispose de salles de simulation equipees de postes spec
 ```
 Demarrage
     │
-    ├── 1 seule salle au total
-    │       → Calendrier direct (mode selon TypeSalle)
+    ├── Salles avec lieu/unite renseigne ?
+    │   │
+    │   ├── Plusieurs lieux → Choix du lieu
+    │   │       └── Plusieurs unites → Choix de l'unite
+    │   │               └── → suite classique
+    │   │
+    │   └── 1 seul lieu (saute) → 1 seule unite (saute) → suite classique
     │
-    ├── Plusieurs salles, 1 seul TypeSalle
-    │       → Liste des salles directement
-    │           → Calendrier
-    │
-    └── Plusieurs TypeSalles
-            → Choix du TypeSalle
-                → Liste des salles du type choisi
-                    → Calendrier
+    └── Suite classique
+            ├── 1 seule salle → Calendrier direct
+            ├── 1 seul TypeSalle → Liste des salles
+            └── Plusieurs TypeSalles → Choix TypeSalle → Liste salles → Calendrier
 ```
 
 La navigation est resolue automatiquement dans `mount()` via `resoudreNavigation()`.
@@ -142,8 +144,8 @@ flowchart TD
 | Action | Condition |
 |---|---|
 | Voir le detail | Toujours |
-| Valider | Permission `resa::validation_salle` + en attente |
-| Invalider | Permission `resa::validation_salle` + validee |
+| Valider | `resa::admin` OU gestionnaire de la salle concernee |
+| Invalider | Idem |
 | Supprimer | En attente uniquement (admin : toujours) |
 | Reserver pour un tiers | Permission `resa::reservation.view` |
 
@@ -177,22 +179,29 @@ flowchart TD
 
 ## Livrables
 
-- [x] Migrations type_salles (+ mode enum), salles, type_postes, salle_postes, type_capacites, poste_capacites, reservations
+- [x] Migrations type_salles, salles, type_postes, salle_postes, type_capacites, poste_capacites, reservations
+- [x] Migration unite_id sur salles (lien module RH)
+- [x] Migration email sur salles (notification reservation)
+- [x] Migration resa_salle_gestionnaires (table pivot user ↔ salle)
 - [x] Models Eloquent avec relations et methodes metier
 - [x] Seeders de donnees initiales + poste fictif "Salle entiere" pour salles classiques
-- [x] CalendrierWidget Guava Calendar — navigation multi-niveaux
+- [x] CalendrierWidget Guava Calendar — navigation lieu / unite / type_salle / salle
 - [x] Mode Simulateur : Wizard 3 etapes + scoring postes
 - [x] Mode Classique : Wizard 2 etapes + verification salle libre
 - [x] Filtres calendrier par poste et capacite (mode simulateur)
 - [x] Blocage visuel creneaux deja reserves (`selectAllow`)
-- [x] Resources Filament gestion salles, postes, capacites, types
-- [x] Tests Pest 16 cas
-- [x] Documentation technique widget
+- [x] Resources Filament gestion salles (avec lieu/unite/gestionnaires), postes, capacites, types
+- [x] Permissions `resa::admin` et `resa::gestionnaire_salle`
+- [x] Policies — gestionnaire limite a ses salles assignees
+- [x] Notification email a la creation de reservation (Observer + Mailable)
+- [x] Tests Pest 50+ cas
+- [x] Documentation technique widget + guide utilisateur
 
 ---
 
 ## Documents associes
 
+- [Guide utilisateur](guide-utilisateur.md)
 - [Schema base de donnees](base-de-donnees.md)
 - [Widget calendrier](widget-calendrier.md)
-- [Tests](test-unitaire.md)
+- [Tests](test-unitiaire.md)

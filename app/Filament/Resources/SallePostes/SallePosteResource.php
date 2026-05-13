@@ -2,12 +2,14 @@
 
 namespace Modules\Resa\Filament\Resources\SallePostes;
 
+use Modules\Resa\Models\Salle;
 use Modules\Resa\Models\SallePoste;
 use BackedEnum;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Modules\Resa\Filament\Resources\SallePostes\Pages\CreateSallePoste;
 use Modules\Resa\Filament\Resources\SallePostes\Pages\EditSallePoste;
 use Modules\Resa\Filament\Resources\SallePostes\Pages\ListSallePostes;
@@ -24,8 +26,8 @@ class SallePosteResource extends Resource
     protected static string|\UnitEnum|null $navigationGroup = 'Gestion';
     protected static ?int                    $navigationSort  = 3;
 
-    //protected static ?string $recordTitleAttribute = 'SallePoste';
-    protected static ?string $recordTitleAttribute = 'libelle_court';
+  //    protected static ?string $recordTitleAttribute = 'SallePoste';
+    // protected static ?string $recordTitleAttribute = 'libelle_court';  
 
     public static function form(Schema $schema): Schema
     {
@@ -40,6 +42,28 @@ class SallePosteResource extends Resource
     public static function table(Table $table): Table
     {
         return SallePostesTable::configure($table);
+    }
+
+    public static function canAccess(): bool
+    {
+        $user = auth()->user();
+        return $user?->can('resa::admin')
+            || $user?->can('resa::gestionnaire_salle');
+    }
+
+    public static function getEloquentQuery(): Builder
+    {
+        $user  = auth()->user();
+        $query = parent::getEloquentQuery();
+
+        if ($user?->can('resa::admin')) {
+            return $query;
+        }
+
+        // Gestionnaire : uniquement les postes de ses salles
+        $salleIds = Salle::whereHas('gestionnaires', fn ($q) => $q->where('user_id', $user?->id))->pluck('id');
+
+        return $query->whereIn('salle_id', $salleIds);
     }
 
     public static function getRelations(): array

@@ -40,11 +40,11 @@ pest()->group('Resa');
 beforeEach(function () {
     Filament::setCurrentPanel(Filament::getPanel('resa'));
 
-    Permission::findOrCreate('resa::validation_salle', 'web');
+    Permission::findOrCreate('resa::admin', 'web');
     Permission::findOrCreate('resa::reservation.view', 'web');
 
     $this->admin = User::factory()->create(['admin' => 1]);
-    $this->admin->givePermissionTo('resa::validation_salle');
+    $this->admin->givePermissionTo('resa::admin');
     $this->admin->givePermissionTo('resa::reservation.view');
 
     $this->seed(ResaDatabaseSeeder::class);
@@ -500,3 +500,5 @@ describe('ReservationResource — formulaires', function () {
     });
 
 });
+
+

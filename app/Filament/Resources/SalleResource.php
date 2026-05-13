@@ -23,6 +23,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 
+use App\Models\User;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
 use Filament\Tables\Columns\ImageColumn;
@@ -69,7 +70,14 @@ class SalleResource extends Resource
                     )->orderBy('libelle_court')->pluck('libelle_court', 'id'))
                     ->native(false)
                     ->searchable(),
-                TextInput::make('email')
+                Select::make('gestionnaires')
+                ->label('Gestionnaires')
+                ->helperText('Ces utilisateurs peuvent gérer la salle et valider ses réservations')
+                ->multiple()
+                ->relationship('gestionnaires', 'display_name')
+                ->searchable()
+                ->preload(),
+            TextInput::make('email')
                 ->label('Email(s) de notification')
                 ->helperText('Plusieurs adresses séparées par des virgules')
                 ->maxLength(500)

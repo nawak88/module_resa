@@ -23,7 +23,7 @@ class TypePosteResource extends Resource
     protected static ?int                    $navigationSort  = 5;
 
     //protected static ?string $recordTitleAttribute = 'TypePoste';
-    protected static ?string $recordTitleAttribute = 'libelle_court';
+    // protected static ?string $recordTitleAttribute = 'libelle_court';
 
     public static function form(Schema $schema): Schema
     {

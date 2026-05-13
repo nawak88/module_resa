@@ -102,7 +102,9 @@ class VoirReservationAction
                 });
         }
 
-        if ($widget->adminMode && auth()->user()?->can('resa::validation_salle')) {
+        $peutValider = $widget->adminMode && auth()->user()?->can('valider', $record);
+
+        if ($peutValider) {
             $actions[] = Action::make('toggle_validation')
                 ->label($record->isValide() ? 'Invalider' : 'Valider')
                 ->color($record->isValide() ? 'warning' : 'success')
@@ -119,4 +121,3 @@ class VoirReservationAction
         return $actions;
     }
 }
-
