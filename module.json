@@ -9,5 +9,6 @@
         "Modules\\Resa\\Providers\\Filament\\FilamentPanelProvider"
 
     ],
-    "files": []
+    "files": [],
+    "version": "0.0.1"
 }
