@@ -14,7 +14,6 @@ use Guava\Calendar\ValueObjects\FetchInfo;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
-use Illuminate\Support\HtmlString;
 use Modules\Resa\Filament\Widgets\CalendrierWidget\Actions\FiltresAction;
 use Modules\Resa\Filament\Widgets\CalendrierWidget\Actions\NouvelleResaAction;
 use Modules\Resa\Filament\Widgets\CalendrierWidget\Actions\NouvelleResaClassiqueAction;
@@ -55,13 +54,17 @@ class CalendrierWidget extends CalendarWidget
     // Etapes Wizard simulateur
     public ?string $etapeDebut        = null;
     public ?string $etapeFin          = null;
-    public array   $etapeCapacites    = [];
+    public array   $etapeFormations    = [];
     public ?int    $etapePoste        = null;
     public array   $postesDisponibles = [];
 
     // Filtres calendrier
     public array $filtrePostes    = [];
-    public array $filtreCapacites = [];
+    public array $filtreFormations = [];
+
+    // Cache interne (non persisté en Livewire)
+    private ?string $_modeActifCache    = null;
+    private ?array  $_weekendDatesCache = null;
 
     /* ── Initialisation ───────────────────────────────────────────────────── */
 
@@ -209,6 +212,7 @@ class CalendrierWidget extends CalendarWidget
 
     public function selectTypeSalle(int $id): void
     {
+        $this->_modeActifCache = null;
         $this->typeSalleActive = $id;
 
         $salles = $this->getSallesScope()->where('type_salle_id', $id)->get();
@@ -224,11 +228,12 @@ class CalendrierWidget extends CalendarWidget
 
     public function selectSalle(int $id): void
     {
+        $this->_modeActifCache = null;
         $this->salleActive     = $id;
         $this->typeSalleActive = Salle::find($id)?->type_salle_id ?? $this->typeSalleActive;
         $this->etapeNavigation = 'calendrier';
         $this->filtrePostes    = [];
-        $this->filtreCapacites = [];
+        $this->filtreFormations = [];
     }
 
     /* ── Retours ──────────────────────────────────────────────────────────── */
@@ -265,8 +270,9 @@ class CalendrierWidget extends CalendarWidget
 
     public function getModeActif(): string
     {
-        if (! $this->typeSalleActive) return TypeSalle::MODE_SIMULATEUR;
-        return TypeSalle::find($this->typeSalleActive)?->mode ?? TypeSalle::MODE_SIMULATEUR;
+        if ($this->_modeActifCache !== null) return $this->_modeActifCache;
+        if (! $this->typeSalleActive) return $this->_modeActifCache = TypeSalle::MODE_SIMULATEUR;
+        return $this->_modeActifCache = TypeSalle::find($this->typeSalleActive)?->mode ?? TypeSalle::MODE_SIMULATEUR;
     }
 
     public function isModeClassique(): bool
@@ -277,6 +283,13 @@ class CalendrierWidget extends CalendarWidget
     public function isModeSimulateur(): bool
     {
         return $this->getModeActif() === TypeSalle::MODE_SIMULATEUR;
+    }
+
+    public function getCalendarView(): CalendarViewType
+    {
+        return $this->isModeSimulateur()
+            ? CalendarViewType::ResourceTimeGridWeek
+            : CalendarViewType::TimeGridWeek;
     }
 
     public function getHeading(): ?string
@@ -308,8 +321,8 @@ class CalendrierWidget extends CalendarWidget
         $debutMin = $d->hour * 60 + $d->minute;
         $finMin   = $f->hour * 60 + $f->minute;
 
-        if ($debutMin < 8 * 60 || $debutMin >= 17 * 60) return "L'heure de debut doit etre entre 08h00 et 17h00.";
-        if ($finMin <= 8 * 60 || $finMin > 17 * 60)     return "L'heure de fin doit etre entre 08h00 et 17h00.";
+        if ($debutMin < 8 * 60 || $debutMin >= 18 * 60) return "L'heure de debut doit etre entre 08h00 et 18h00.";
+        if ($finMin <= 8 * 60 || $finMin > 18 * 60)     return "L'heure de fin doit etre entre 08h00 et 18h00.";
 
         if (auth()->check()) {
             $dejaReserve = Reservation::where('user_id', auth()->id())
@@ -326,6 +339,8 @@ class CalendrierWidget extends CalendarWidget
 
     public function getWeekendDatesPublic(): array
     {
+        if ($this->_weekendDatesCache !== null) return $this->_weekendDatesCache;
+
         $dates = [];
         $day   = now()->startOfDay()->copy();
         $end   = now()->addMonths(6);
@@ -337,7 +352,7 @@ class CalendrierWidget extends CalendarWidget
             $day->addDay();
         }
 
-        return $dates;
+        return $this->_weekendDatesCache = $dates;
     }
 
     /* ── Ressources Guava ─────────────────────────────────────────────────── */
@@ -387,10 +402,11 @@ class CalendrierWidget extends CalendarWidget
             $query->whereIn('salle_poste_id', $this->filtrePostes);
         }
 
-        if (! empty($this->filtreCapacites)) {
+        if (! empty($this->filtreFormations)) {
             $query->where(function ($q) {
-                foreach ($this->filtreCapacites as $id) {
-                    $q->whereJsonContains('capacites_utilisees', $id);
+                foreach ($this->filtreFormations as $id) {
+                    $q->orWhereJsonContains('formations_utilisees', (int) $id)
+                      ->orWhereJsonContains('formations_utilisees', (string) $id);
                 }
             });
         }
@@ -402,65 +418,60 @@ class CalendrierWidget extends CalendarWidget
 
     public function getOptions(): array
     {
-        $resasUser = [];
-        if (auth()->check()) {
-            $resasUser = Reservation::where('user_id', auth()->id())
-                ->get(['debut', 'fin'])
-                ->map(fn ($r) => [
-                    'start' => $r->debut->toIso8601String(),
-                    'end'   => $r->fin->toIso8601String(),
-                ])
-                ->values()
-                ->toArray();
-        }
+        $simulateur = $this->isModeSimulateur();
 
-        $resasJson = json_encode($resasUser);
+        $dayView      = $simulateur ? 'resourceTimeGridDay'      : 'timeGridDay';
+        $weekView     = $simulateur ? 'resourceTimeGridWeek'     : 'timeGridWeek';
+        $timelineView = $simulateur ? 'resourceTimelineWeek'     : null;
 
-        return [
-            'nowIndicator'     => true,
-            'slotDuration'     => '00:15:00',
-            'height'           => 'auto',
-            'selectable'       => true,
-            'editable'         => auth()->check(),
-            'weekends'         => false,
-            'businessHours'    => [
-                'daysOfWeek' => [1, 2, 3, 4, 5],
-                'startTime'  => '08:00',
-                'endTime'    => '17:00',
-            ],
-            'selectConstraint' => 'businessHours',
-            'headerToolbar'    => [
+        $endButtons = $simulateur
+            ? "{$dayView},{$weekView},{$timelineView},dayGridMonth,listWeek,listMonth"
+            : "{$dayView},{$weekView},dayGridMonth,listWeek,listMonth";
+
+        $options = [
+            'nowIndicator' => true,
+            'slotDuration' => '00:30:00',
+            //lotHeight'   => 60,
+            'height'       => 'auto',
+            'selectable'   => true,
+            'editable'     => auth()->check(),
+            'hiddenDays'          => [0, 6],
+            'datesAboveResources' => true,
+            'headerToolbar' => [
                 'start'  => 'prev,next today',
                 'center' => 'title',
-                'end'    => 'timeGridDay,timeGridWeek,dayGridMonth,listWeek,listMonth',
+                'end'    => $endButtons,
             ],
             'buttonText' => [
-                'today'        => "Aujourd'hui",
-                'timeGridDay'  => 'Jour',
-                'timeGridWeek' => 'Semaine',
-                'dayGridMonth' => 'Mois',
-                'listWeek'     => 'Liste sem.',
-                'listMonth'    => 'Liste mois',
+                'today'                   => "Aujourd'hui",
+                'timeGridDay'             => 'Jour',
+                'timeGridWeek'            => 'Semaine',
+                'resourceTimeGridDay'     => 'Jour',
+                'resourceTimeGridWeek'    => 'Grille',
+                'resourceTimelineWeek'    => 'Timeline',
+                'dayGridMonth'            => 'Mois',
+                'listWeek'                => 'Liste sem.',
+                'listMonth'               => 'Liste mois',
             ],
             'locale'      => 'fr',
             'slotMinTime' => '08:00:00',
-            'slotMaxTime' => '17:00:00',
+            'slotMaxTime' => '18:00:00',
             'allDaySlot'  => false,
             'scrollTime'  => '08:00:00',
-            'selectAllow' => new HtmlString("
-                function(selectInfo) {
-                    var resasUser = {$resasJson};
-                    var start = selectInfo.start.getTime();
-                    var end   = selectInfo.end.getTime();
-                    for (var i = 0; i < resasUser.length; i++) {
-                        var rs = new Date(resasUser[i].start).getTime();
-                        var re = new Date(resasUser[i].end).getTime();
-                        if (start < re && end > rs) return false;
-                    }
-                    return true;
-                }
-            "),
         ];
+
+        if ($simulateur) {
+            $options['views'] = [
+                'resourceTimelineWeek' => [
+                    'slotDuration'      => '01:00:00',
+                    'slotMinTime'       => '08:00:00',
+                    'slotMaxTime'       => '18:00:00',
+                    'scrollTime'        => '08:00:00',
+                ],
+            ];
+        }
+
+        return $options;
     }
 
     /* ── Header actions ───────────────────────────────────────────────────── */
@@ -545,7 +556,7 @@ class CalendrierWidget extends CalendarWidget
 
         $this->etapeDebut        = $debut->toDateTimeString();
         $this->etapeFin          = $fin->toDateTimeString();
-        $this->etapeCapacites    = [];
+        $this->etapeFormations    = [];
         $this->etapePoste        = null;
         $this->postesDisponibles = [];
 
@@ -561,7 +572,7 @@ class CalendrierWidget extends CalendarWidget
 
         $this->etapeDebut        = $info->start->toDateTimeString();
         $this->etapeFin          = $info->end->toDateTimeString();
-        $this->etapeCapacites    = [];
+        $this->etapeFormations    = [];
         $this->etapePoste        = null;
         $this->postesDisponibles = [];
 
@@ -612,3 +623,5 @@ class CalendrierWidget extends CalendarWidget
         return true;
     }
 }
+
+

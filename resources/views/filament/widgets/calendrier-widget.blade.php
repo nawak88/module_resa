@@ -108,7 +108,9 @@
             .dark .ec .ec-header .ec-day-head { color:rgba(219,234,254,.85); }
             .dark .ec .ec-header .ec-day.ec-today { background:rgba(255,255,255,.12); }
             .dark .ec .ec-header .ec-day.ec-today .ec-day-head { color:#bfdbfe; text-shadow:0 1px 4px rgba(0,0,0,.4); }
-            .ec .ec-time-grid .ec-time { font-size:.6875rem; font-weight:500; color:#9ca3af; }
+            .ec .ec-time-grid .ec-time { font-size:.9rem; font-weight:600; color:#6b7280; }
+            /* .ec-time-grid .ec-line { height: 60px !important; }
+            .ec-time-grid .ec-time { height: 60px !important; line-height: 60px !important; } */
             .ec .ec-event { border-radius:.375rem; box-shadow:0 1px 3px rgba(0,0,0,.1); transition:transform .1s ease,box-shadow .1s ease; cursor:pointer; }
             .ec .ec-event:hover { transform:translateY(-1px); box-shadow:0 4px 10px rgba(0,0,0,.15); }
             .ec .ec-event-title { font-weight:600; }
@@ -293,3 +295,5 @@
     </x-filament::section>
     <x-filament-actions::modals/>
 </x-filament-widgets::widget>
+
+

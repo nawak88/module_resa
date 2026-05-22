@@ -10,7 +10,7 @@ use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Schema;
 use Modules\Resa\Models\Salle;
 use Modules\Resa\Models\SallePoste;
-use Modules\Resa\Models\TypeCapacite;
+use Modules\Resa\Models\Formation;
 use Modules\Resa\Models\TypePoste;
 
 class SallePosteForm
@@ -47,9 +47,9 @@ class SallePosteForm
                 ->rows(3)
                 ->columnSpanFull(),
 
-            CheckboxList::make('typeCapacites')
-                ->label('Capacites disponibles sur ce poste')
-                ->relationship('typeCapacites', 'libelle_court')
+            CheckboxList::make('formations')
+                ->label('Formations disponibles sur ce poste')
+                ->relationship('formations', 'libelle_court')
                 ->columns(3)
                 ->columnSpanFull()
                 ->helperText('Selectionnez les capacites disponibles sur ce poste.')
@@ -63,3 +63,5 @@ class SallePosteForm
         ]);
     }
 }
+
+

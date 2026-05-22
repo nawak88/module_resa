@@ -14,7 +14,7 @@ class PosteDisponibiliteService
      * @param  int       $salleId          ID de la salle
      * @param  \DateTime $debut            Début du créneau
      * @param  \DateTime $fin              Fin du créneau
-     * @param  array     $typeCapaciteIds  IDs des TypeCapacite demandées
+     * @param  array     $formationIds     IDs des Formation demandées
      * @param  int|null  $excludeResaId    ID réservation à exclure (pour modification)
      * @return Collection<array{poste: SallePoste, score: int, total: int, manquantes: Collection}>
      */
@@ -22,32 +22,32 @@ class PosteDisponibiliteService
         int $salleId,
         \DateTime $debut,
         \DateTime $fin,
-        array $typeCapaciteIds = [],
+        array $formationIds = [],
         ?int $excludeResaId = null
     ): Collection {
         $postes = SallePoste::query()
             ->where('salle_id', $salleId)
-            ->with('typeCapacites')
+            ->with('formations')
             ->orderBy('ordre')
             ->get();
 
         return $postes
             ->filter(fn (SallePoste $poste) => $poste->isDisponible($debut, $fin, $excludeResaId))
-            ->map(function (SallePoste $poste) use ($typeCapaciteIds) {
-                $capacitesPoste  = $poste->typeCapacites->pluck('id');
-                $score           = empty($typeCapaciteIds)
+            ->map(function (SallePoste $poste) use ($formationIds) {
+                $formationsPoste = $poste->formations->pluck('id');
+                $score           = empty($formationIds)
                     ? 0
-                    : $capacitesPoste->intersect($typeCapaciteIds)->count();
-                $manquantes      = collect($typeCapaciteIds)->diff($capacitesPoste);
+                    : $formationsPoste->intersect($formationIds)->count();
+                $manquantes      = collect($formationIds)->diff($formationsPoste);
 
                 return [
                     'poste'      => $poste,
                     'score'      => $score,
-                    'total'      => count($typeCapaciteIds),
-                    'manquantes' => $manquantes, // IDs des capacités non couvertes
+                    'total'      => count($formationIds),
+                    'manquantes' => $manquantes, // IDs des formations non couvertes
                 ];
             })
-            ->filter(fn ($item) => empty($typeCapaciteIds) || $item['score'] > 0)
+            ->filter(fn ($item) => empty($formationIds) || $item['score'] > 0)
             ->sortByDesc('score')
             ->values();
     }
@@ -60,8 +60,10 @@ class PosteDisponibiliteService
         int $salleId,
         \DateTime $debut,
         \DateTime $fin,
-        array $typeCapaciteIds = []
+        array $formationIds = []
     ): bool {
-        return $this->postesDisponibles($salleId, $debut, $fin, $typeCapaciteIds)->isEmpty();
+        return $this->postesDisponibles($salleId, $debut, $fin, $formationIds)->isEmpty();
     }
 }
+
+

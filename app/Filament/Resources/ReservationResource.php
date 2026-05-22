@@ -29,7 +29,7 @@ use Modules\Resa\Filament\Resources\ReservationResource\Pages\ListReservations;
 use Modules\Resa\Models\Reservation;
 use Modules\Resa\Models\Salle;
 use Modules\Resa\Models\SallePoste;
-use Modules\Resa\Models\TypeCapacite;
+use Modules\Resa\Models\Formation;
 use App\Models\User;
 
 class ReservationResource extends Resource
@@ -94,9 +94,9 @@ class ReservationResource extends Resource
                     ->seconds(false)
                     ->after('debut'),
 
-                CheckboxList::make('capacites_utilisees')
-                    ->label('Capacites utilisees')
-                    ->options(TypeCapacite::orderBy('ordre')->pluck('libelle_court', 'id'))
+                CheckboxList::make('formations_utilisees')
+                    ->label('Formations utilisees')
+                    ->options(Formation::orderBy('ordre')->pluck('libelle_court', 'id'))
                     ->columns(3)
                     ->columnSpanFull(),
 
@@ -133,12 +133,12 @@ class ReservationResource extends Resource
                     ->label('Poste')
                     ->sortable(),
 
-                TextColumn::make('capacites_label')
-                    ->label('Capacites')
+                TextColumn::make('formations_label')
+                    ->label('Formations')
                     ->getStateUsing(function (Reservation $record): string {
-                        $ids = $record->capacites_utilisees;
+                        $ids = $record->formations_utilisees;
                         if (empty($ids) || ! is_array($ids)) return '—';
-                        return TypeCapacite::whereIn('id', $ids)
+                        return Formation::whereIn('id', $ids)
                             ->orderBy('ordre')
                             ->pluck('libelle_court')
                             ->join(', ') ?: '—';

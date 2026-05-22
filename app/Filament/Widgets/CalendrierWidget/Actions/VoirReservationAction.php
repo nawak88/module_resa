@@ -7,7 +7,7 @@ use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Grid;
 use Filament\Infolists\Components\TextEntry;
 use Modules\Resa\Models\Reservation;
-use Modules\Resa\Models\TypeCapacite;
+use Modules\Resa\Models\Formation;
 
 class VoirReservationAction
 {
@@ -54,8 +54,8 @@ class VoirReservationAction
                 ->label('Capacites utilisees')
                 ->getStateUsing(function () use ($r) {
                     $record = $r();
-                    if (! $record || empty($record->capacites_utilisees)) return '—';
-                    return TypeCapacite::whereIn('id', $record->capacites_utilisees)
+                    if (! $record || empty($record->formations_utilisees)) return '—';
+                    return Formation::whereIn('id', $record->formations_utilisees)
                         ->pluck('libelle_court')->join(', ');
                 }),
 
@@ -93,11 +93,12 @@ class VoirReservationAction
                 ->icon('heroicon-o-trash')
                 ->requiresConfirmation()
                 ->action(function () use ($record, $widget): void {
-                    $record->delete();
+                    $id = $record->id;
                     $widget->recordEnCours = null;
                     $widget->recordTitre   = null;
+                    $widget->eventRecord   = null;
+                    Reservation::destroy($id);
                     $widget->refreshRecords();
-                    $widget->unmountAction();
                     Notification::make()->title('Reservation supprimee')->success()->send();
                 });
         }
@@ -121,3 +122,6 @@ class VoirReservationAction
         return $actions;
     }
 }
+
+
+

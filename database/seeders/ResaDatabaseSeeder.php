@@ -15,10 +15,10 @@ class ResaDatabaseSeeder extends Seeder
             SettingSeeder::class,
             TypeSalleSeeder::class,
             TypePosteSeeder::class,
-            TypeCapaciteSeeder::class,
+            FormationSeeder::class,
             SalleSeeder::class,
             SallePosteSeeder::class,
-            PosteCapaciteSeeder::class,
+            PosteFormationSeeder::class,
 
         
            

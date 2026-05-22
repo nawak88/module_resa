@@ -70,18 +70,6 @@ class SalleResource extends Resource
                     )->orderBy('libelle_court')->pluck('libelle_court', 'id'))
                     ->native(false)
                     ->searchable(),
-                Select::make('gestionnaires')
-                ->label('Gestionnaires')
-                ->helperText('Ces utilisateurs peuvent gérer la salle et valider ses réservations')
-                ->multiple()
-                ->relationship('gestionnaires', 'display_name')
-                ->searchable()
-                ->preload(),
-            TextInput::make('email')
-                ->label('Email(s) de notification')
-                ->helperText('Plusieurs adresses séparées par des virgules')
-                ->maxLength(500)
-                ->default(null),
             TextInput::make('code')
                 ->maxLength(255)
                 ->default(null),
@@ -198,3 +186,5 @@ class SalleResource extends Resource
         ];
     }
 }
+
+

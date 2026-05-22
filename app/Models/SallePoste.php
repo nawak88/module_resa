@@ -9,6 +9,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Guava\Calendar\Contracts\Resourceable;
 use Guava\Calendar\ValueObjects\CalendarResource;
 use Modules\Resa\Traits\HasTablePrefix;
+use Modules\Resa\Models\Formation;
+use Modules\Resa\Models\PosteFormation;
 
 class SallePoste extends Model implements Resourceable
 {
@@ -40,13 +42,13 @@ class SallePoste extends Model implements Resourceable
         return $this->belongsTo(TypePoste::class, 'type_poste_id');
     }
 
-    public function typeCapacites(): BelongsToMany
+    public function formations(): BelongsToMany
     {
         return $this->belongsToMany(
-            TypeCapacite::class,
-            (new PosteCapacite)->getTable(),
+            Formation::class,
+            (new PosteFormation)->getTable(),
             'salle_poste_id',
-            'type_capacite_id'
+            'formation_id'
         )->orderBy('ordre');
     }
 
@@ -74,12 +76,12 @@ class SallePoste extends Model implements Resourceable
             ->exists();
     }
 
-    public function scoreCapacites(array $typeCapaciteIds): int
+    public function scoreFormations(array $formationIds): int
     {
-        if (empty($typeCapaciteIds)) return 0;
+        if (empty($formationIds)) return 0;
 
-        return $this->typeCapacites()
-            ->whereIn('id', $typeCapaciteIds)
+        return $this->formations()
+            ->whereIn('id', $formationIds)
             ->count();
     }
 
@@ -91,3 +93,5 @@ class SallePoste extends Model implements Resourceable
             ->title($this->libelle_court ?? '');
     }
 }
+
+

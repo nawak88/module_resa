@@ -8,7 +8,7 @@ use Modules\Resa\Filament\Resources;
 use Modules\Resa\Models\Reservation;
 use Modules\Resa\Models\Salle;
 use Modules\Resa\Models\SallePoste;
-use Modules\Resa\Models\TypeCapacite;
+use Modules\Resa\Models\Formation;
 use Modules\Resa\Models\TypePoste;
 use Modules\Resa\Models\TypeSalle;
 use Spatie\Permission\Models\Permission;
@@ -147,10 +147,10 @@ describe('TypePosteResource', function () {
 });
 
 /* ══════════════════════════════════════════════════════════════════════════════
- * TypeCapaciteResource
+ * FormationResource (TypeCapaciteResource)
  * ══════════════════════════════════════════════════════════════════════════════ */
 
-describe('TypeCapaciteResource', function () {
+describe('FormationResource', function () {
 
     it('list retourne 200', function () {
         $this->actingAs($this->admin)
@@ -165,7 +165,7 @@ describe('TypeCapaciteResource', function () {
     });
 
     it('edit retourne 200', function () {
-        $record = TypeCapacite::firstOrFail();
+        $record = Formation::firstOrFail();
         $this->actingAs($this->admin)
             ->get(Resources\TypeCapacites\TypeCapaciteResource::getUrl('edit', ['record' => $record]))
             ->assertSuccessful();

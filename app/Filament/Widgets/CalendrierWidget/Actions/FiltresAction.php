@@ -6,22 +6,22 @@ use Filament\Actions\Action;
 use Filament\Forms\Components\ToggleButtons;
 use Filament\Schemas\Components\Section;
 use Modules\Resa\Models\SallePoste;
-use Modules\Resa\Models\TypeCapacite;
+use Modules\Resa\Models\Formation;
 
 class FiltresAction
 {
     public static function make(object $widget): Action
     {
-        $hasFilters = ! empty($widget->filtrePostes) || ! empty($widget->filtreCapacites);
+        $hasFilters = ! empty($widget->filtrePostes) || ! empty($widget->filtreFormations);
 
         return Action::make('filtres')
             ->label('Filtres')
             ->icon('heroicon-o-funnel')
             ->color($hasFilters ? 'warning' : 'gray')
-            ->badge($hasFilters ? (count($widget->filtrePostes) + count($widget->filtreCapacites)) : null)
+            ->badge($hasFilters ? (count($widget->filtrePostes) + count($widget->filtreFormations)) : null)
             ->mountUsing(fn ($form) => $form->fill([
-                'postes'    => $widget->filtrePostes,
-                'capacites' => $widget->filtreCapacites,
+                'postes'     => $widget->filtrePostes,
+                'formations' => $widget->filtreFormations,
             ]))
             ->schema([
                 Section::make('Postes')
@@ -48,17 +48,17 @@ class FiltresAction
                             ->grouped(),
                     ]),
 
-                Section::make('Capacités')
-                    ->description('Filtrer par type de capacité utilisé')
+                Section::make('Formations')
+                    ->description('Filtrer par type de formation utilisé')
                     ->icon('heroicon-o-tag')
                     ->compact()
                     ->schema([
-                        ToggleButtons::make('capacites')
+                        ToggleButtons::make('formations')
                             ->label('')
                             ->multiple()
-                            ->options(TypeCapacite::orderBy('ordre')->pluck('libelle_court', 'id'))
+                            ->options(Formation::orderBy('ordre')->pluck('libelle_court', 'id'))
                             ->colors(array_fill_keys(
-                                TypeCapacite::orderBy('ordre')
+                                Formation::orderBy('ordre')
                                     ->pluck('id')
                                     ->map(fn ($id) => (string) $id)
                                     ->toArray(),
@@ -79,15 +79,17 @@ class FiltresAction
                     ->outlined()
                     ->icon('heroicon-o-x-mark')
                     ->action(function () use ($widget): void {
-                        $widget->filtrePostes    = [];
-                        $widget->filtreCapacites = [];
+                        $widget->filtrePostes     = [];
+                        $widget->filtreFormations = [];
                         $widget->refreshRecords();
                     }),
             ])
             ->action(function (array $data) use ($widget): void {
-                $widget->filtrePostes    = $data['postes'] ?? [];
-                $widget->filtreCapacites = $data['capacites'] ?? [];
+                $widget->filtrePostes     = $data['postes'] ?? [];
+                $widget->filtreFormations = $data['formations'] ?? [];
                 $widget->refreshRecords();
             });
     }
 }
+
+

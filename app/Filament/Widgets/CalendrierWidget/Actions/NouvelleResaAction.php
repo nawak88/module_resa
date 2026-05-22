@@ -2,23 +2,25 @@
 
 namespace Modules\Resa\Filament\Widgets\CalendrierWidget\Actions;
 
+use App\Events\UnUtilisateurLocalDoitEtreCreeEvent;
+use App\Models\AnnuaireUser;
+use App\Models\User;
 use Filament\Actions\Action;
-use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\DateTimePicker;
-use Filament\Infolists\Components\TextEntry;
-use Filament\Forms\Components\Radio;
+use Filament\Forms\Components\Hidden;
+use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
-use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
+use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Wizard;
 use Filament\Schemas\Components\Wizard\Step;
+use Illuminate\Validation\ValidationException;
+use Modules\Resa\Models\Formation;
 use Modules\Resa\Models\Reservation;
-use Modules\Resa\Models\SallePoste;
-use Modules\Resa\Models\TypeCapacite;
 use Modules\Resa\Services\PosteDisponibiliteService;
-use App\Models\User;
 
 class NouvelleResaAction
 {
@@ -30,67 +32,63 @@ class NouvelleResaAction
             ->icon('heroicon-o-plus')
             ->mountUsing(function ($form) use ($widget) {
                 $form->fill([
-                    'debut'         => $widget->etapeDebut ?? now()->setTime(8, 0)->toDateTimeString(),
-                    'fin'           => $widget->etapeFin   ?? now()->setTime(9, 0)->toDateTimeString(),
-                    'capacites'     => [],
-                    'poste_id'      => null,
-                    'user_id'       => auth()->id(),
-                    'libelle_court' => null,
-                    'libelle_long'  => null,
+                    'debut'             => $widget->etapeDebut ?? now()->setTime(8, 0)->toDateTimeString(),
+                    'fin'               => $widget->etapeFin   ?? now()->setTime(9, 0)->toDateTimeString(),
+                    'formation_id'  => null,
+                    'postes_attribution' => [],
                 ]);
             })
             ->schema([
                 Wizard::make([
                     self::etape1($widget),
                     self::etape2($widget),
-                    self::etape3($widget),
-                ])->columnSpanFull(),
+                ])
+                ->submitAction(new \Illuminate\Support\HtmlString(
+                    '<button type="submit" class="fi-btn fi-color-custom fi-btn-color-custom fi-btn-size-md fi-btn-primary px-4 py-2 rounded-lg bg-primary-600 text-white font-semibold shadow-sm hover:bg-primary-500">'
+                    . 'Confirmer la réservation'
+                    . '</button>'
+                ))
+                ->columnSpanFull(),
             ])
             ->modalHeading('Nouvelle reservation')
-            ->modalSubmitActionLabel('Confirmer la reservation')
+            ->modalSubmitAction(false)
             ->action(function (array $data) use ($widget): void {
-                $posteId = isset($data['poste_id']) ? (int) $data['poste_id'] : null;
-                $debut   = $data['debut'];
-                $fin     = $data['fin'];
-                $userId  = $widget->adminMode ? ($data['user_id'] ?? auth()->id()) : auth()->id();
+                $postes = $data['postes_attribution'] ?? [];
+                $formationId = $widget->etapeFormations[0] ?? null;
+                $formation = $formationId ? Formation::find($formationId) : null;
 
-                $erreur = $widget->validerCreneauPublic($debut, $fin);
-                if ($erreur) {
-                    Notification::make()->title($erreur)->danger()->send();
-                    return;
-                }
+                $postesSelectionnes = array_filter($postes, fn ($l) => ! empty($l['selectionne']) && ! empty($l['user_1_id']));
 
-                $poste = SallePoste::find($posteId);
-                if (! $poste) {
-                    Notification::make()->title('Poste introuvable. Veuillez recommencer.')->danger()->send();
-                    return;
-                }
-
-                if (! $poste->isDisponible(new \DateTime($debut), new \DateTime($fin))) {
+                if (empty($postesSelectionnes)) {
                     Notification::make()
-                        ->title('Creneau indisponible')
-                        ->body("Ce creneau vient d'etre reserve. Veuillez recommencer.")
-                        ->danger()->send();
+                        ->title('Veuillez sélectionner au moins un poste et attribuer un stagiaire.')
+                        ->danger()
+                        ->send();
                     return;
                 }
 
-                Reservation::create([
-                    'user_id'             => $userId,
-                    'salle_poste_id'      => $poste->id,
-                    'libelle_court'       => $data['libelle_court'],
-                    'libelle_long'        => $data['libelle_long'] ?? null,
-                    'debut'               => $debut,
-                    'fin'                 => $fin,
-                    'capacites_utilisees' => $data['capacites'] ?? [],
-                    'validation'          => $widget->adminMode ? Reservation::VALIDE : Reservation::EN_ATTENTE,
-                    'validated_by'        => $widget->adminMode ? auth()->id() : null,
-                    'validated_at'        => $widget->adminMode ? now()         : null,
-                ]);
+                foreach ($postesSelectionnes as $ligne) {
+
+                    Reservation::create([
+                        'user_id'             => $ligne['user_1_id'],
+                        'salle_poste_id'      => $ligne['poste_id'],
+                        'libelle_court'       => $formation?->libelle_court ?? '',
+                        'debut'               => $widget->etapeDebut,
+                        'fin'                 => $widget->etapeFin,
+                        'formations_utilisees' => $formationId ? [(int) $formationId] : [],
+                        'validation'          => $widget->adminMode ? Reservation::VALIDE : Reservation::EN_ATTENTE,
+                        'validated_by'        => $widget->adminMode ? auth()->id() : null,
+                        'validated_at'        => $widget->adminMode ? now()         : null,
+                        'data'                => [
+                            'users'            => array_values(array_filter([$ligne['user_1_id'], $ligne['user_2_id'] ?? null])),
+                            'formation_id' => $formationId,
+                        ],
+                    ]);
+                }
 
                 $widget->etapeDebut        = null;
                 $widget->etapeFin          = null;
-                $widget->etapeCapacites    = [];
-                $widget->etapePoste        = null;
+                $widget->etapeFormations    = [];
                 $widget->postesDisponibles = [];
 
                 $widget->refreshRecords();
@@ -98,13 +96,14 @@ class NouvelleResaAction
                 Notification::make()
                     ->title('Demande envoyee')
                     ->body($widget->adminMode ? 'Reservation creee et validee.' : 'Votre demande est en attente de validation.')
-                    ->success()->send();
+                    ->success()
+                    ->send();
             });
     }
 
     private static function etape1(object $widget): Step
     {
-        return Step::make('Creneau et capacites')
+        return Step::make('Creneau & Formation')
             ->icon('heroicon-o-calendar')
             ->schema([
                 Grid::make(2)->schema([
@@ -128,119 +127,217 @@ class NouvelleResaAction
                         ->disabledDates(fn () => $widget->getWeekendDatesPublic()),
                 ]),
 
-                CheckboxList::make('capacites')
-                    ->label('Capacites souhaitees')
-                    ->options(TypeCapacite::orderBy('ordre')->pluck('libelle_court', 'id'))
-                    ->columns(2)
-                    ->helperText('Selectionnez les capacites. Le systeme proposera les postes compatibles.')
+                Select::make('formation_id')
+                    ->label('Type de formation')
+                    ->required()
+                    ->options(Formation::orderBy('ordre')->pluck('libelle_court', 'id'))
                     ->columnSpanFull(),
             ])
-            ->afterValidation(function ($get) use ($widget) {
+            ->afterValidation(function ($get, $set) use ($widget) {
                 $erreur = $widget->validerCreneauPublic($get('debut'), $get('fin'));
                 if ($erreur) {
                     Notification::make()->title($erreur)->danger()->send();
-                    return;
+                    throw ValidationException::withMessages(['debut' => $erreur]);
                 }
 
+                $formationId = $get('formation_id');
+
                 $service = app(PosteDisponibiliteService::class);
-                $postes  = $service->postesDisponibles(
-                    salleId:         $widget->salleActive,
-                    debut:           new \DateTime($get('debut')),
-                    fin:             new \DateTime($get('fin')),
-                    typeCapaciteIds: $get('capacites') ?? [],
+                $postes = $service->postesDisponibles(
+                    salleId:      $widget->salleActive,
+                    debut:        new \DateTime($get('debut')),
+                    fin:          new \DateTime($get('fin')),
+                    formationIds: [$formationId],
                 );
 
-                $widget->etapeDebut     = $get('debut');
-                $widget->etapeFin       = $get('fin');
-                $widget->etapeCapacites = $get('capacites') ?? [];
-                $total                  = count($widget->etapeCapacites);
+                $widget->etapeDebut      = $get('debut');
+                $widget->etapeFin        = $get('fin');
+                $widget->etapeFormations = [$formationId];
 
-                $widget->postesDisponibles = $postes->mapWithKeys(function ($item) use ($total) {
-                    $poste      = $item['poste'];
-                    $score      = $item['score'];
-                    $manquantes = $item['manquantes'];
-
-                    if ($total === 0) {
-                        $label = $poste->libelle_court . ' - libre';
-                    } elseif ($manquantes->isEmpty()) {
-                        $label = $poste->libelle_court . ' - toutes les capacites (' . $score . '/' . $total . ')';
-                    } else {
-                        $caps  = TypeCapacite::whereIn('id', $manquantes)->pluck('libelle_court')->join(', ');
-                        $label = $poste->libelle_court . ' - ' . $score . '/' . $total . ' (manque: ' . $caps . ')';
-                    }
-
-                    return [$poste->id => $label];
+                $widget->postesDisponibles = $postes->mapWithKeys(function ($item) {
+                    return [$item['poste']->id => $item['poste']->libelle_court];
                 })->toArray();
+
+                $data = $postes->map(function ($item) {
+                    return [
+                        'poste_id'       => $item['poste']->id,
+                        'poste_libelle'  => $item['poste']->libelle_court,
+                        'selectionne'    => false,
+                        'ajouter_user_2' => false,
+                        'user_1_id'      => null,
+                        'user_2_id'      => null,
+                    ];
+                })->values()->toArray();
+
+                $set('postes_attribution', $data);
             });
     }
 
     private static function etape2(object $widget): Step
     {
-        return Step::make('Choix du poste')
+        return Step::make('Attribution des postes')
             ->icon('heroicon-o-computer-desktop')
             ->schema(function () use ($widget): array {
-                if (empty($widget->postesDisponibles)) {
-                    return [
-                        TextEntry::make('aucun_poste')
-                            ->label('Aucun poste disponible')
-                            ->getStateUsing(fn () => "Retournez a l'etape precedente.")
-                            ->columnSpanFull(),
-                    ];
-                }
+                $formation       = isset($widget->etapeFormations[0]) ? Formation::find($widget->etapeFormations[0]) : null;
+                $nbUsersParPoste = $formation?->nb_users_par_poste ?? 1;
+                $isIntradef      = config('skeletor.reseau_de_deploiement') === 'intradef';
 
                 return [
                     TextEntry::make('recap_creneau')
                         ->label('Creneau')
-                        ->getStateUsing(
-                            \Carbon\Carbon::parse($widget->etapeDebut)->format('d/m/Y H:i')
-                            . ' - '
-                            . \Carbon\Carbon::parse($widget->etapeFin)->format('H:i')
-                        ),
+                        ->getStateUsing(function () use ($widget) {
+                            if (! $widget->etapeDebut) return '—';
+                            return \Carbon\Carbon::parse($widget->etapeDebut)->format('d/m/Y H:i')
+                                . ' — '
+                                . \Carbon\Carbon::parse($widget->etapeFin)->format('H:i');
+                        }),
 
-                    Radio::make('poste_id')
+                    Repeater::make('postes_attribution')
                         ->label('Postes disponibles')
-                        ->options($widget->postesDisponibles)
-                        ->required()
-                        ->columnSpanFull()
-                        ->helperText('Tries par score de compatibilite decroissant.'),
+                        ->addable(false)
+                        ->deletable(false)
+                        ->reorderable(false)
+                        ->schema([
+                            Hidden::make('poste_id'),
+
+                            Toggle::make('selectionne')
+                                ->label(fn ($get) => $get('poste_libelle') ?? 'Poste')
+                                ->live()
+                                ->default(false)
+                                ->columnSpanFull(),
+
+                            // ── Stagiaire 1 ───────────────────────────────
+                            Select::make('user_1_id')
+                                ->label('Stagiaire 1')
+                                ->options(fn () => User::orderBy('nom')->get()->mapWithKeys(fn ($u) => [$u->id => trim("{$u->nom} {$u->prenom}")]))
+                                ->searchable()
+                                ->nullable()
+                                ->visible(fn ($get) => (bool) $get('selectionne'))
+                                ->columnSpanFull(),
+
+                            // ── Bouton annuaire pour user 1 ───────────────
+                            ...($isIntradef ? [
+                                \Filament\Schemas\Components\Actions::make([
+                                    self::annuaireAction('user_1_id'),
+                                ])->visible(fn ($get) => (bool) $get('selectionne')),
+                            ] : []),
+
+                            // ── Toggle + Stagiaire 2 ──────────────────────
+                            Toggle::make('ajouter_user_2')
+                                ->label('Ajouter un 2ème stagiaire')
+                                ->live()
+                                ->default(false)
+                                ->visible(fn ($get) => (bool) $get('selectionne') && $nbUsersParPoste >= 2)
+                                ->columnSpanFull(),
+
+                            Select::make('user_2_id')
+                                ->label('Stagiaire 2')
+                                ->options(fn () => User::orderBy('nom')->get()->mapWithKeys(fn ($u) => [$u->id => trim("{$u->nom} {$u->prenom}")]))
+                                ->searchable()
+                                ->nullable()
+                                ->visible(fn ($get) => (bool) $get('selectionne') && (bool) $get('ajouter_user_2') && $nbUsersParPoste >= 2)
+                                ->columnSpanFull(),
+
+                            ...($isIntradef ? [
+                                \Filament\Schemas\Components\Actions::make([
+                                    self::annuaireAction('user_2_id'),
+                                ])->visible(fn ($get) => (bool) $get('selectionne') && (bool) $get('ajouter_user_2') && $nbUsersParPoste >= 2),
+                            ] : []),
+                        ])
+                        ->columnSpanFull(),
                 ];
             });
     }
 
-    private static function etape3(object $widget): Step
+    private static function annuaireAction(string $targetField): Action
     {
-        return Step::make('Informations')
-            ->icon('heroicon-o-pencil-square')
+        return Action::make('annuaire_' . $targetField)
+            ->label('Rechercher dans l\'annuaire')
+            ->icon('heroicon-o-magnifying-glass')
+            ->color('gray')
+            ->modalHeading('Recherche annuaire')
             ->schema([
-                ...($widget->adminMode ? [
-                    Select::make('user_id')
-                        ->label('Reserver pour')
-                        ->required()
-                        ->options(fn () => User::orderBy('nom')->pluck('nom', 'id'))
-                        ->searchable()
-                        ->default(auth()->id())
-                        ->columnSpanFull(),
-                ] : []),
+                Wizard::make([
+                    Step::make('Critères')
+                        ->icon('heroicon-o-magnifying-glass')
+                        ->schema([
+                            Grid::make(2)->schema([
+                                TextInput::make('ann_nom')->label('Nom'),
+                                TextInput::make('ann_prenom')->label('Prénom'),
+                                TextInput::make('ann_email')->label('Email'),
+                                TextInput::make('ann_unite')->label('Unité'),
+                            ]),
+                        ])
+                        ->afterValidation(function ($get, $set) {
+                            AnnuaireUser::setQuery([
+                                'nom'    => $get('ann_nom')    ?? '',
+                                'prenom' => $get('ann_prenom') ?? '',
+                                'email'  => $get('ann_email')  ?? '',
+                                'unite'  => $get('ann_unite')  ?? '',
+                            ]);
 
-                TextEntry::make('recap_creneau_final')
-                    ->label('Creneau')
-                    ->getStateUsing(function () use ($widget) {
-                        if (! $widget->etapeDebut) return '—';
-                        return \Carbon\Carbon::parse($widget->etapeDebut)->format('d/m/Y H:i')
-                            . ' - '
-                            . \Carbon\Carbon::parse($widget->etapeFin)->format('H:i');
-                    }),
+                            $options = AnnuaireUser::query()->get()
+                                ->mapWithKeys(fn ($u) => [
+                                    $u->nid => trim("{$u->nom} {$u->prenom}") . ($u->unites ? " ({$u->unites})" : ''),
+                                ])
+                                ->toArray();
 
-                TextInput::make('libelle_court')
-                    ->label('Intitule de la reservation')
-                    ->required()
-                    ->maxLength(500)
-                    ->columnSpanFull(),
+                            $set('ann_resultats', $options);
+                            $set('ann_nid', null);
+                            $set('ann_data', null);
+                        }),
 
-                Textarea::make('libelle_long')
-                    ->label('Informations complementaires')
-                    ->rows(3)
-                    ->columnSpanFull(),
-            ]);
+                    Step::make('Résultats')
+                        ->icon('heroicon-o-user-plus')
+                        ->schema([
+                            Select::make('ann_nid')
+                                ->label('Sélectionner un utilisateur')
+                                ->options(fn ($get) => $get('ann_resultats') ?? [])
+                                ->required()
+                                ->searchable()
+                                ->live()
+                                ->afterStateUpdated(function ($state, $set) {
+                                    if (! $state) return;
+                                    $user = AnnuaireUser::query()->get()->firstWhere('nid', $state);
+                                    if ($user) {
+                                        $set('ann_data', json_encode([
+                                            'nom'    => $user->nom,
+                                            'prenom' => $user->prenom ?? $user->prenomusuel ?? '',
+                                            'email'  => $user->email,
+                                        ]));
+                                    }
+                                }),
+                            Hidden::make('ann_resultats'),
+                            Hidden::make('ann_data'),
+                        ]),
+                ])->columnSpanFull(),
+            ])
+            ->action(function (array $data) {
+                $raw = $data['ann_data'] ?? null;
+                if (! $raw) {
+                    Notification::make()->title('Aucun utilisateur sélectionné.')->warning()->send();
+                    return;
+                }
+
+                $info = json_decode($raw, true);
+
+                $existing = User::where('email', $info['email'])->first();
+                if ($existing) {
+                    Notification::make()
+                        ->title('Utilisateur déjà dans la liste')
+                        ->body(trim("{$info['nom']} {$info['prenom']}") . ' est déjà disponible dans le sélecteur.')
+                        ->info()->send();
+                    return;
+                }
+
+                UnUtilisateurLocalDoitEtreCreeEvent::dispatch($info, []);
+
+                Notification::make()
+                    ->title('Utilisateur ajouté')
+                    ->body(trim("{$info['nom']} {$info['prenom']}") . ' a été créé. Sélectionnez-le dans la liste.')
+                    ->success()->send();
+            });
     }
 }
+
+

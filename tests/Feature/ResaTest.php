@@ -13,7 +13,7 @@ use Modules\Resa\Mail\ReservationCree;
 use Modules\Resa\Models\Reservation;
 use Modules\Resa\Models\Salle;
 use Modules\Resa\Models\SallePoste;
-use Modules\Resa\Models\TypeCapacite;
+use Modules\Resa\Models\Formation;
 use Modules\Resa\Models\TypeSalle;
 use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
@@ -46,8 +46,8 @@ beforeEach(function () {
     $this->poste1 = SallePoste::where('libelle_court', 'Poste 1')->firstOrFail();
     $this->poste2 = SallePoste::where('libelle_court', 'Poste 2')->firstOrFail();
     $this->poste3 = SallePoste::where('libelle_court', 'Poste 3')->firstOrFail();
-    $this->fpv    = TypeCapacite::where('libelle_court', 'FPV')->firstOrFail();
-    $this->mm20   = TypeCapacite::where('libelle_court', '20mm')->firstOrFail();
+    $this->fpv    = Formation::where('libelle_court', 'FPV')->firstOrFail();
+    $this->mm20   = Formation::where('libelle_court', '20mm')->firstOrFail();
 
     $this->debutLibre = now()->next('Monday')->setTime(9, 0)->toDateTimeString();
     $this->finLibre   = now()->next('Monday')->setTime(11, 0)->toDateTimeString();
@@ -139,7 +139,7 @@ function creerReservation(
         'libelle_court'       => $libelle,
         'debut'               => $debut,
         'fin'                 => $fin,
-        'capacites_utilisees' => $capacites,
+        'formations_utilisees' => $capacites,
         'validation'          => $isAdmin ? Reservation::VALIDE : Reservation::EN_ATTENTE,
         'validated_by'        => $isAdmin ? $actingAs->id : null,
         'validated_at'        => $isAdmin ? now()          : null,
@@ -545,7 +545,7 @@ describe('Salle classique', function () {
             'libelle_court'       => 'Reunion section B',
             'debut'               => $this->debutClassique,
             'fin'                 => $this->finClassique,
-            'capacites_utilisees' => [],
+            'formations_utilisees' => [],
             'validation'          => Reservation::EN_ATTENTE,
         ]);
 
@@ -565,7 +565,7 @@ describe('Salle classique', function () {
             'libelle_court'       => 'Resa existante',
             'debut'               => $this->debutClassique,
             'fin'                 => $this->finClassique,
-            'capacites_utilisees' => [],
+            'formations_utilisees' => [],
             'validation'          => Reservation::VALIDE,
         ]);
 
@@ -592,7 +592,7 @@ describe('Salle classique', function () {
             'libelle_court'       => 'Resa user 1',
             'debut'               => $this->debutClassique,
             'fin'                 => $this->finClassique,
-            'capacites_utilisees' => [],
+            'formations_utilisees' => [],
             'validation'          => Reservation::VALIDE,
         ]);
 
@@ -613,7 +613,7 @@ describe('Salle classique', function () {
             'libelle_court'       => 'Resa matin',
             'debut'               => now()->addWeek()->startOfWeek()->setTime(8, 0)->toDateTimeString(),
             'fin'                 => now()->addWeek()->startOfWeek()->setTime(10, 0)->toDateTimeString(),
-            'capacites_utilisees' => [],
+            'formations_utilisees' => [],
             'validation'          => Reservation::VALIDE,
         ]);
 
@@ -634,7 +634,7 @@ describe('Salle classique', function () {
             'libelle_court'       => 'Resa apres-midi',
             'debut'               => $debutAM,
             'fin'                 => $finAM,
-            'capacites_utilisees' => [],
+            'formations_utilisees' => [],
             'validation'          => Reservation::EN_ATTENTE,
         ]);
 
@@ -650,12 +650,12 @@ describe('Salle classique', function () {
             'libelle_court'       => 'Resa classique sans capacites',
             'debut'               => $this->debutClassique,
             'fin'                 => $this->finClassique,
-            'capacites_utilisees' => [],
+            'formations_utilisees' => [],
             'validation'          => Reservation::EN_ATTENTE,
         ]);
 
-        expect($resa->capacites_utilisees)->toBeArray();
-        expect($resa->capacites_utilisees)->toBeEmpty();
+        expect($resa->formations_utilisees)->toBeArray();
+        expect($resa->formations_utilisees)->toBeEmpty();
     });
 
     it('le poste fictif est exclu des ressources du calendrier', function () {
@@ -675,7 +675,7 @@ describe('Salle classique', function () {
             'libelle_court'       => 'A valider classique',
             'debut'               => $this->debutClassique,
             'fin'                 => $this->finClassique,
-            'capacites_utilisees' => [],
+            'formations_utilisees' => [],
             'validation'          => Reservation::EN_ATTENTE,
         ]);
 
@@ -810,7 +810,7 @@ describe('CalendrierWidget — navigation lieu et unité', function () {
             // 1 seule salle dans cette unité → calendrier direct
             ->assertSet('etapeNavigation', 'calendrier')
             ->assertSet('salleActive', Salle::where('unite_id', $unite->id)->first()->id);
-    })->skip();
+    });
 
 });
 
@@ -893,3 +893,5 @@ describe('ReservationObserver — notification email', function () {
     });
 
 });
+
+

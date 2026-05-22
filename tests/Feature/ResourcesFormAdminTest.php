@@ -20,7 +20,7 @@ use Modules\Resa\Filament\Resources\TypeSalles\Pages\EditTypeSalle;
 use Modules\Resa\Models\Reservation;
 use Modules\Resa\Models\Salle;
 use Modules\Resa\Models\SallePoste;
-use Modules\Resa\Models\TypeCapacite;
+use Modules\Resa\Models\Formation;
 use Modules\Resa\Models\TypePoste;
 use Modules\Resa\Models\TypeSalle;
 use Modules\RH\Models\LieuUnite;
@@ -148,12 +148,12 @@ describe('TypePosteResource — formulaires', function () {
 });
 
 /* ══════════════════════════════════════════════════════════════════════════════
- * TypeCapaciteResource
+ * FormationResource (TypeCapaciteResource)
  * ══════════════════════════════════════════════════════════════════════════════ */
 
-describe('TypeCapaciteResource — formulaires', function () {
+describe('FormationResource — formulaires', function () {
 
-    it('crée un TypeCapacite valide', function () {
+    it('crée une Formation valide', function () {
         Livewire::actingAs($this->admin)
             ->test(CreateTypeCapacite::class)
             ->fillForm([
@@ -164,7 +164,7 @@ describe('TypeCapaciteResource — formulaires', function () {
             ->call('create')
             ->assertHasNoFormErrors();
 
-        $this->assertDatabaseHas('resa_type_capacites', [
+        $this->assertDatabaseHas('resa_formations', [
             'libelle_court' => 'Radar',
         ]);
     });
@@ -177,8 +177,8 @@ describe('TypeCapaciteResource — formulaires', function () {
             ->assertHasFormErrors(['libelle_court' => 'required']);
     });
 
-    it('modifie un TypeCapacite existant', function () {
-        $record = TypeCapacite::firstOrFail();
+    it('modifie une Formation existante', function () {
+        $record = Formation::firstOrFail();
 
         Livewire::actingAs($this->admin)
             ->test(EditTypeCapacite::class, ['record' => $record->id])
@@ -186,7 +186,7 @@ describe('TypeCapaciteResource — formulaires', function () {
             ->call('save')
             ->assertHasNoFormErrors();
 
-        $this->assertDatabaseHas('resa_type_capacites', [
+        $this->assertDatabaseHas('resa_formations', [
             'id'            => $record->id,
             'libelle_court' => 'Capacité modifiée',
         ]);

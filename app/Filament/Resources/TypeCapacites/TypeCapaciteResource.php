@@ -2,7 +2,7 @@
 
 namespace Modules\Resa\Filament\Resources\TypeCapacites;
 
-use  Modules\Resa\Models\TypeCapacite;
+use  Modules\Resa\Models\Formation;
 use BackedEnum;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
@@ -16,14 +16,14 @@ use Modules\Resa\Filament\Resources\TypeCapacites\Tables\TypeCapacitesTable;
 
 class TypeCapaciteResource extends Resource
 {
-    protected static ?string $model = TypeCapacite::class;
+    protected static ?string $model = Formation::class;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
     protected static string|\UnitEnum|null $navigationGroup = 'Gestion';
     protected static ?int                    $navigationSort  = 5;
 
     //protected static ?string $recordTitleAttribute = 'TypeCapacite';
-    // protected static ?string $recordTitleAttribute = 'libelle_court';
+    // protected static ?string $recordTitleAttribute = 'libelle_court'; 
 
     public static function form(Schema $schema): Schema
     {
@@ -51,3 +51,5 @@ class TypeCapaciteResource extends Resource
         ];
     }
 }
+
+

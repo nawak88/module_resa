@@ -75,7 +75,7 @@ class NouvelleResaClassiqueAction
                     'libelle_long'        => $data['libelle_long'] ?? null,
                     'debut'               => $debut,
                     'fin'                 => $fin,
-                    'capacites_utilisees' => [],
+                    'formations_utilisees' => [],
                     'validation'          => $widget->adminMode ? Reservation::VALIDE : Reservation::EN_ATTENTE,
                     'validated_by'        => $widget->adminMode ? auth()->id() : null,
                     'validated_at'        => $widget->adminMode ? now()         : null,
@@ -181,3 +181,5 @@ class NouvelleResaClassiqueAction
             ]);
     }
 }
+
+

@@ -35,8 +35,8 @@ class SallePostesTable
                 ->badge()
                 ->color('gray'),
 
-            TextColumn::make('typeCapacites.libelle_court')
-                ->label('Capacites')
+            TextColumn::make('formations.libelle_court')
+                ->label('Formations')
                 ->badge()
                 ->color('primary')
                 ->separator(', '),
@@ -81,3 +81,5 @@ class SallePostesTable
         ]);
     }
 }
+
+

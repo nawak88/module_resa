@@ -8,6 +8,7 @@ use Guava\Calendar\Contracts\Eventable;
 use Guava\Calendar\ValueObjects\CalendarEvent;
 use Modules\Resa\Traits\HasTablePrefix;
 use App\Models\User;
+use Modules\Resa\Models\Formation;
 
 class Reservation extends Model implements Eventable
 {
@@ -15,7 +16,7 @@ class Reservation extends Model implements Eventable
 
     protected $fillable = [
         'uuid', 'user_id', 'salle_poste_id', 'libelle_court', 'libelle_long',
-        'debut', 'fin', 'couleur', 'validation', 'capacites_utilisees',
+        'debut', 'fin', 'couleur', 'validation', 'formations_utilisees',
         'validated_by', 'validated_at', 'data',
     ];
 
@@ -24,7 +25,7 @@ class Reservation extends Model implements Eventable
         'fin'                 => 'datetime',
         'validated_at'        => 'datetime',
         'validation'          => 'integer',
-        'capacites_utilisees' => 'array',
+        'formations_utilisees' => 'array',
         'data'                => 'array',
     ];
 
@@ -94,30 +95,52 @@ class Reservation extends Model implements Eventable
 
     public function toCalendarEvent(): CalendarEvent
     {
-        $backgroundColor = $this->isValide() ? '#22c55e' : '#9ca3af';
+        $formationColor = null;
+        if ($this->isValide() && ! empty($this->formations_utilisees)) {
+            $couleur = Formation::whereIn('id', $this->formations_utilisees)->value('couleur');
+            $formationColor = match ($couleur) {
+                'primary'   => '#6366f1',
+                'secondary' => '#64748b',
+                'success'   => '#22c55e',
+                'danger'    => '#ef4444',
+                'warning'   => '#f59e0b',
+                'info'      => '#3b82f6',
+                'gray'      => '#6b7280',
+                default     => null,
+            };
+        }
+        $backgroundColor = $this->isValide()
+            ? ($formationColor ?? '#22c55e')
+            : '#9ca3af';
 
-        // Label capacites pour affichage enrichi
+        // Label formations pour affichage enrichi
         $capacitesLabel = '';
-        if (! empty($this->capacites_utilisees)) {
-            $capacitesLabel = TypeCapacite::whereIn('id', $this->capacites_utilisees)
+        if (! empty($this->formations_utilisees)) {
+            $capacitesLabel = Formation::whereIn('id', $this->formations_utilisees)
                 ->orderBy('ordre')
                 ->pluck('libelle_court')
                 ->join(', ');
         }
 
-        $isAdmin = auth()->user()?->can('resa::reservation.view') ?? false;
+        $isAdmin      = auth()->user()?->can('resa::reservation.view') ?? false;
+        $isSimulateur = ! empty($this->formations_utilisees);
 
-        $heures = ($this->debut?->format('H:i') ?? '') . ' - ' . ($this->fin?->format('H:i') ?? '');
-        $poste  = $this->sallePoste?->libelle_court ?? '';
-        $nom    = $isAdmin ? ($this->user?->nom ?? '') : '';
+        $poste = $this->sallePoste?->libelle_court ?? '';
+        $nom   = $isAdmin ? ($this->user?->nom ?? '') : '';
 
-        $lignes = array_filter([
-            $heures,
-            $this->libelle_court ?? '',
-            $nom    ? '👤 ' . $nom    : '',
-            $poste  ? '🖥 ' . $poste  : '',
-            $capacitesLabel ? '🎯 ' . $capacitesLabel : '',
-        ]);
+        if ($isSimulateur) {
+            $lignes = array_filter([
+                $capacitesLabel ?: ($this->libelle_court ?? ''),
+                $nom ? '👤 ' . $nom : '',
+            ]);
+        } else {
+            $heures = ($this->debut?->format('H:i') ?? '') . ' — ' . ($this->fin?->format('H:i') ?? '');
+            $lignes = array_filter([
+                $heures,
+                $this->libelle_court ?? '',
+                $nom ? '👤 ' . $nom : '',
+            ]);
+        }
 
         return CalendarEvent::make($this)
             ->title(implode("\n", $lignes))
@@ -127,7 +150,7 @@ class Reservation extends Model implements Eventable
             ->backgroundColor($backgroundColor)
             ->extendedProp('validation', $this->validation)
             ->extendedProp('description', $this->libelle_long)
-            ->extendedProp('capacites', $this->capacites_utilisees ?? [])
+            ->extendedProp('formations', $this->formations_utilisees ?? [])
             ->extendedProp('nom', $this->user?->nom ?? '')
             ->extendedProp('capacites_label', $capacitesLabel)
             ->extendedProp('poste', $this->sallePoste?->libelle_court ?? '')
@@ -136,3 +159,5 @@ class Reservation extends Model implements Eventable
             ->editable(! $this->isValide() && auth()->id() === $this->user_id);
     }
 }
+
+

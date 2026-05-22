@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Modules\Resa\Traits\HasTablePrefix;
 
-class PosteCapacite extends Model
+class PosteFormation extends Model
 {
     use HasTablePrefix;
 
@@ -14,7 +14,7 @@ class PosteCapacite extends Model
 
     protected $fillable = [
         'salle_poste_id',
-        'type_capacite_id',
+        'formation_id',
     ];
 
     public function sallePoste(): BelongsTo
@@ -22,8 +22,10 @@ class PosteCapacite extends Model
         return $this->belongsTo(SallePoste::class, 'salle_poste_id');
     }
 
-    public function typeCapacite(): BelongsTo
+    public function formation(): BelongsTo
     {
-        return $this->belongsTo(TypeCapacite::class, 'type_capacite_id');
+        return $this->belongsTo(Formation::class, 'formation_id');
     }
 }
+
+
