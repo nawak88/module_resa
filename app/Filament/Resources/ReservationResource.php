@@ -65,11 +65,24 @@ class ReservationResource extends Resource
                     ->columnSpanFull(),
 
                 Select::make('user_id')
-                    ->label('Demandeur')
+                    ->label('Stagiaire 1')
                     ->options(fn () => User::orderBy('nom')->pluck('nom', 'id'))
                     ->searchable()
                     ->required()
                     ->default(auth()->id()),
+
+                Select::make('data.users.1')
+                    ->label('Stagiaire 2')
+                    ->options(fn () => User::orderBy('nom')->pluck('nom', 'id'))
+                    ->searchable()
+                    ->nullable()
+                    ->visible(function ($get) {
+                        $posteId = $get('salle_poste_id');
+                        if (! $posteId) return false;
+                        $poste = SallePoste::find($posteId);
+                        $formations = $poste?->formations ?? collect();
+                        return $formations->max('nb_users_par_poste') >= 2;
+                    }),
 
                 Select::make('salle_poste_id')
                     ->label('Poste')
@@ -121,9 +134,17 @@ class ReservationResource extends Resource
                     ->limit(40),
 
                 TextColumn::make('user.nom')
-                    ->label('Demandeur')
+                    ->label('Stagiaire 1')
                     ->searchable()
                     ->sortable(),
+
+                TextColumn::make('stagiaire_2')
+                    ->label('Stagiaire 2')
+                    ->getStateUsing(function (Reservation $record): string {
+                        $user2Id = $record->data['users'][1] ?? null;
+                        if (! $user2Id) return '—';
+                        return \App\Models\User::find($user2Id)?->nom ?? '—';
+                    }),
 
                 TextColumn::make('sallePoste.salle.libelle_court')
                     ->label('Salle')
@@ -284,3 +305,5 @@ class ReservationResource extends Resource
         );
     }
 }
+
+

@@ -47,8 +47,21 @@ class VoirReservationAction
                 ->getStateUsing(fn () => $r()?->sallePoste?->salle?->libelle_court ?? '—'),
 
             TextEntry::make('user_ph')
-                ->label('Demandeur')
+                ->label('Stagiaire 1')
                 ->getStateUsing(fn () => $r()?->user?->nom ?? '—'),
+
+            TextEntry::make('user2_ph')
+                ->label('Stagiaire 2')
+                ->visible(function () use ($r) {
+                    $record = $r();
+                    return $record && ! empty($record->data['users'][1]);
+                })
+                ->getStateUsing(function () use ($r) {
+                    $record = $r();
+                    $user2Id = $record?->data['users'][1] ?? null;
+                    if (! $user2Id) return '—';
+                    return \App\Models\User::find($user2Id)?->nom ?? '—';
+                }),
 
             TextEntry::make('capacites_ph')
                 ->label('Capacites utilisees')
