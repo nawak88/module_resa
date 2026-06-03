@@ -3,8 +3,8 @@
 namespace Modules\Resa\Providers\Filament;
 
 use Filament\Pages\Dashboard;
-use Modules\Resa\Filament\Widgets\CalendrierWidget;
 use Filament\Support\Enums\Width;
+use Modules\Resa\Filament\Widgets\CalendrierWidget;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
@@ -106,3 +106,5 @@ class FilamentPanelProvider extends PanelProvider
         return config('modules.namespace').'\\'.$this->module;
     }
 }
+
+
