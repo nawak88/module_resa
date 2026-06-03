@@ -2,13 +2,15 @@
 
 namespace Modules\Resa\Models;
 
+use Guava\Calendar\Contracts\Resourceable;
+use Guava\Calendar\ValueObjects\CalendarResource;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Modules\RH\Models\Unite;
 use Modules\Resa\Traits\HasTablePrefix;
 
-class Ressource extends Model
+class Ressource extends Model implements Resourceable
 {
     use HasTablePrefix;
 
@@ -38,5 +40,11 @@ class Ressource extends Model
     public function getNomAttribute(): string
     {
         return $this->libelle_court ?? $this->libelle;
+    }
+
+    public function toCalendarResource(): CalendarResource
+    {
+        return CalendarResource::make($this->id)
+            ->title($this->nom);
     }
 }

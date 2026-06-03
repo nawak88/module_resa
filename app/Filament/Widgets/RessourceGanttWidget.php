@@ -2,59 +2,64 @@
 
 namespace Modules\Resa\Filament\Widgets;
 
-use App\Models\User;
-use Carbon\Carbon;
-use Filament\Widgets\Widget;
-use Illuminate\Support\Facades\Validator;
+use Filament\Actions\Action;
+use Filament\Forms\Components\DateTimePicker;
+use Filament\Forms\Components\Textarea;
+use Filament\Notifications\Notification;
+use Guava\Calendar\Enums\CalendarViewType;
+use Guava\Calendar\Filament\CalendarWidget;
+use Guava\Calendar\ValueObjects\DateSelectInfo;
+use Guava\Calendar\ValueObjects\EventClickInfo;
+use Guava\Calendar\ValueObjects\EventDropInfo;
+use Guava\Calendar\ValueObjects\EventResizeInfo;
+use Guava\Calendar\ValueObjects\FetchInfo;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Collection;
 use Modules\RH\Models\LieuUnite;
 use Modules\RH\Models\Unite;
 use Modules\Resa\Models\Ressource;
 use Modules\Resa\Models\RessourceCategorie;
 use Modules\Resa\Models\RessourceReservation;
 
-class RessourceGanttWidget extends Widget
+class RessourceGanttWidget extends CalendarWidget
 {
     protected string $view = 'resa::filament.widgets.ressource-gantt-widget';
 
-    protected static bool $isLazy       = false;
     protected static bool $isDiscovered = false;
 
     protected int | string | array $columnSpan = 'full';
 
-    const HEURE_DEBUT = 8;
-    const HEURE_FIN   = 18;
+    protected CalendarViewType $calendarView = CalendarViewType::ResourceTimelineWeek;
 
-    public string $vue         = 'jour'; // 'jour' | 'semaine' | 'gantt'
-    public string $currentDate = '';
-    public string $semaineDebut = '';
+    protected bool $eventClickEnabled  = true;
+    protected bool $dateSelectEnabled  = true;
+    protected bool $eventDragEnabled   = true;
+    protected bool $eventResizeEnabled = true;
+    protected ?string $locale          = 'fr';
 
-    // Modal création
-    public bool   $showModal        = false;
-    public ?int   $modalRessourceId = null;
-    public string $modalDebut       = '';
-    public string $modalFin         = '';
-    public string $modalLibelle     = '';
-    public array  $modalErrors      = [];
-
-    // Modal vue
-    public bool $showViewModal        = false;
-    public ?int $viewingReservationId = null;
-
-    public bool $adminMode = false;
-
+    // Navigation
+    public string  $etape           = 'gantt'; // 'lieu' | 'unite' | 'gantt'
     public ?int    $filtreCategorie = null;
     public ?int    $filtreLieu      = null;
     public ?int    $filtreUnite     = null;
-    public string  $etape           = 'gantt'; // 'lieu' | 'unite' | 'gantt'
+
+    // État admin
+    public bool $adminMode = false;
+
+    // État pour voir une réservation cliquée
+    public ?int $viewingId = null;
+
+    // État pour créer
+    public ?string $newDebut       = null;
+    public ?string $newFin         = null;
+    public ?int    $newRessourceId = null;
 
     public function mount(): void
     {
-        $this->adminMode    = auth()->user()?->can('resa::admin') ?? false;
-        $this->currentDate  = now()->format('Y-m-d');
-        $this->semaineDebut = now()->startOfWeek(Carbon::MONDAY)->format('Y-m-d');
+        $this->adminMode = auth()->user()?->can('resa::admin') ?? false;
 
-        // Si la catégorie a des ressources liées à une unité → flux lieu/unité
-        if ($this->filtreCategorie) {
+        if ($this->filtreCategorie && \Illuminate\Support\Facades\Schema::hasColumn('resa_ressources', 'unite_id')) {
             $hasUnite = Ressource::where('ressource_categorie_id', $this->filtreCategorie)
                 ->where('actif', true)
                 ->whereNotNull('unite_id')
@@ -67,11 +72,8 @@ class RessourceGanttWidget extends Widget
 
     public function getLieux()
     {
-        // Lieux qui ont des unités possédant des ressources de cette catégorie
         $uniteIds = Ressource::where('ressource_categorie_id', $this->filtreCategorie)
-            ->where('actif', true)
-            ->whereNotNull('unite_id')
-            ->pluck('unite_id');
+            ->where('actif', true)->whereNotNull('unite_id')->pluck('unite_id');
 
         return LieuUnite::whereIn('id',
             Unite::whereIn('id', $uniteIds)->pluck('lieu_unite_id')
@@ -81,14 +83,11 @@ class RessourceGanttWidget extends Widget
     public function getUnites()
     {
         $uniteIds = Ressource::where('ressource_categorie_id', $this->filtreCategorie)
-            ->where('actif', true)
-            ->whereNotNull('unite_id')
-            ->pluck('unite_id');
+            ->where('actif', true)->whereNotNull('unite_id')->pluck('unite_id');
 
         return Unite::whereIn('id', $uniteIds)
             ->when($this->filtreLieu, fn ($q) => $q->where('lieu_unite_id', $this->filtreLieu))
-            ->orderBy('ordre')
-            ->get();
+            ->orderBy('ordre')->get();
     }
 
     public function selectLieu(int $id): void
@@ -116,381 +115,349 @@ class RessourceGanttWidget extends Widget
         $this->etape       = 'unite';
     }
 
-    /* ── Vue ──────────────────────────────────────────────────────────────── */
+    /* ── Ressources Guava (colonnes du timeline) ──────────────────────────── */
 
-    public function setVue(string $vue): void
+    public function getResources(): Collection|array
     {
-        $this->vue = $vue;
-        if ($vue !== 'jour') {
-            // Synchronise la semaine sur la date courante
-            $this->semaineDebut = Carbon::parse($this->currentDate)
-                ->startOfWeek(Carbon::MONDAY)->format('Y-m-d');
+        if ($this->etape !== 'gantt') return [];
+
+        try {
+            $user        = auth()->user();
+            $isAdmin     = $user?->can('resa::admin') ?? false;
+            $userUniteId = \Illuminate\Support\Facades\Schema::hasColumn('resa_ressources', 'unite_id')
+                ? $user?->unite_id
+                : null;
+
+            $hasUniteCol = \Illuminate\Support\Facades\Schema::hasColumn('resa_ressources', 'unite_id');
+
+            return Ressource::query()
+                ->where('actif', true)
+                ->when($this->filtreCategorie, fn ($q) => $q->where('ressource_categorie_id', $this->filtreCategorie))
+                ->when($hasUniteCol && $this->filtreUnite, fn ($q) => $q->where('unite_id', $this->filtreUnite))
+                ->when($hasUniteCol && ! $this->filtreUnite && ! $isAdmin && $userUniteId, fn ($q) =>
+                    $q->where(fn ($q2) => $q2->whereNull('unite_id')->orWhere('unite_id', $userUniteId))
+                )
+                ->orderBy('ordre')
+                ->get();
+        } catch (\Throwable) {
+            return collect();
         }
     }
 
-    /* ── Navigation ───────────────────────────────────────────────────────── */
-
-    public function precedent(): void
+    public function getResourcesJs(): array
     {
-        if ($this->vue === 'jour') {
-            $this->currentDate = Carbon::parse($this->currentDate)->subDay()->format('Y-m-d');
-        } else {
-            $this->semaineDebut = Carbon::parse($this->semaineDebut)->subWeek()->format('Y-m-d');
+        return $this->getResources()
+            ->map(fn (Ressource $r) => \Guava\Calendar\ValueObjects\CalendarResource::make($r->id)
+                ->title($r->nom)
+                ->toCalendarObject()
+            )
+            ->toArray();
+    }
+
+    /* ── Événements ───────────────────────────────────────────────────────── */
+
+    public function getEventsJs(array $info): array
+    {
+        $events = $this->getEvents(new FetchInfo($info));
+
+        if ($events instanceof Builder) {
+            $events = $events->get();
         }
-    }
 
-    public function suivant(): void
-    {
-        if ($this->vue === 'jour') {
-            $this->currentDate = Carbon::parse($this->currentDate)->addDay()->format('Y-m-d');
-        } else {
-            $this->semaineDebut = Carbon::parse($this->semaineDebut)->addWeek()->format('Y-m-d');
+        if (is_array($events)) {
+            $events = collect($events);
         }
-    }
 
-    public function auJourdHui(): void
-    {
-        $this->currentDate  = now()->format('Y-m-d');
-        $this->semaineDebut = now()->startOfWeek(Carbon::MONDAY)->format('Y-m-d');
-    }
+        $isAdmin   = $this->adminMode;
+        $tzOffset  = data_get($info, 'tzOffset');
+        $useFilTz  = $this->shouldUseFilamentTimezone();
 
-    /* ── Données communes ─────────────────────────────────────────────────── */
+        return $events
+            ->map(function (RessourceReservation $r) use ($isAdmin, $tzOffset, $useFilTz): array {
+                $nom   = $isAdmin ? ($r->user?->nom ?? '') : '';
+                $titre = implode("\n", array_filter([
+                    $r->libelle ?: ($r->user?->nom ?? ''),
+                    $nom && $r->libelle ? '👤 ' . $nom : '',
+                    $r->debut?->format('H:i') . ' — ' . $r->fin?->format('H:i'),
+                ]));
 
-    public function getHeures(): array
-    {
-        return range(self::HEURE_DEBUT, self::HEURE_FIN - 1);
-    }
+                $couleur = $r->validation === 1 ? '#22c55e' : '#f59e0b';
 
-    public function getJoursSemaine(): array
-    {
-        $debut = Carbon::parse($this->semaineDebut);
-        return collect(range(0, 6))->map(fn ($i) => $debut->copy()->addDays($i))->all();
-    }
-
-    public function getCategories()
-    {
-        $user    = auth()->user();
-        $isAdmin = $user?->can('resa::admin') ?? false;
-        $userUniteId = $user?->unite_id;
-
-        return RessourceCategorie::with('ressourcesActives')
-            ->when($this->filtreCategorie, fn ($q) => $q->where('id', $this->filtreCategorie))
-            ->orderBy('ordre')
-            ->get()
-            ->map(function ($cat) use ($isAdmin, $userUniteId) {
-                $cat->ressourcesActivesForUser = $cat->ressourcesActives->filter(function ($r) use ($isAdmin, $userUniteId) {
-                    // Ressource sans unité → toujours visible
-                    if (is_null($r->unite_id)) return true;
-                    // Ressource avec unité filtrée par l'étape unite sélectionnée
-                    if ($this->filtreUnite) return $r->unite_id === $this->filtreUnite;
-                    // Admin → tout voir
-                    if ($isAdmin) return true;
-                    // User avec unité → sa propre unité
-                    return $userUniteId && $r->unite_id === $userUniteId;
-                })->values();
-                return $cat;
+                return \Guava\Calendar\ValueObjects\CalendarEvent::make($r)
+                    ->title($titre)
+                    ->start($r->debut?->format('Y-m-d H:i:s'))
+                    ->end($r->fin?->format('Y-m-d H:i:s'))
+                    ->resourceId($r->ressource_id)
+                    ->backgroundColor($couleur)
+                    ->editable($r->validation !== 1 && auth()->id() === $r->user_id)
+                    ->toCalendarObject($tzOffset, $useFilTz);
             })
-            ->filter(fn ($cat) => $cat->ressourcesActivesForUser->isNotEmpty());
+            ->all();
     }
 
-    /* ── Données vue JOUR ─────────────────────────────────────────────────── */
-
-    public function getPlanningJour(): array
+    protected function getEvents(FetchInfo $info): Collection|array|Builder
     {
-        $debut = Carbon::parse($this->currentDate)->setTime(self::HEURE_DEBUT, 0);
-        $fin   = Carbon::parse($this->currentDate)->setTime(self::HEURE_FIN, 0);
+        if ($this->etape !== 'gantt') return [];
 
-        $reservations = RessourceReservation::with(['user', 'ressource'])
-            ->where('debut', '<', $fin)
-            ->where('fin',   '>', $debut)
-            ->get();
+        $ressourceIds = $this->getResources()->pluck('id');
 
-        $planning = [];
-        foreach ($reservations as $resa) {
-            $slotDebut = max((int) $resa->debut->format('H'), self::HEURE_DEBUT);
-            $slotFin   = min((int) $resa->fin->format('H'), self::HEURE_FIN);
-            if ($resa->fin->format('i') === '00') {
-                $slotFin--;
-            }
-            for ($h = $slotDebut; $h <= $slotFin && $h < self::HEURE_FIN; $h++) {
-                $planning[$resa->ressource_id][$h] = $resa;
-            }
+        return RessourceReservation::query()
+            ->with(['user', 'ressource'])
+            ->whereIn('ressource_id', $ressourceIds)
+            ->where('debut', '<', $info->end)
+            ->where('fin',   '>', $info->start)
+            ->when(! $this->adminMode, fn ($q) =>
+                $q->where(fn ($q2) => $q2
+                    ->where('validation', RessourceReservation::VALIDE)
+                    ->orWhere('user_id', auth()->id())
+                )
+            );
+    }
+
+    /* ── Options ──────────────────────────────────────────────────────────── */
+
+    public function getOptions(): array
+    {
+        return [
+            'nowIndicator'        => true,
+            'height'              => 'auto',
+            'selectable'          => true,
+            'editable'            => auth()->check(),
+            'hiddenDays'          => [0, 6],
+            'datesAboveResources' => true,
+            'headerToolbar'       => [
+                'start'  => 'prev,next today',
+                'center' => 'title',
+                'end'    => 'resourceTimelineDay,resourceTimelineWeek,resourceTimeGridWeek,dayGridMonth',
+            ],
+            'buttonText' => [
+                'today'                 => "Aujourd'hui",
+                'resourceTimelineDay'   => 'Jour',
+                'resourceTimelineWeek'  => 'Semaine',
+                'resourceTimeGridWeek'  => 'Grille',
+                'dayGridMonth'          => 'Mois',
+            ],
+            'locale'      => 'fr',
+            'slotMinTime' => '08:00:00',
+            'slotMaxTime' => '18:00:00',
+            'scrollTime'  => '08:00:00',
+            'allDaySlot'  => false,
+            'views'       => [
+                'resourceTimelineDay'  => ['slotDuration' => '01:00:00'],
+                'resourceTimelineWeek' => ['slotDuration' => '01:00:00'],
+            ],
+        ];
+    }
+
+    /* ── Heading ──────────────────────────────────────────────────────────── */
+
+    public function getHeading(): ?string
+    {
+        if ($this->filtreCategorie) {
+            $cat = RessourceCategorie::find($this->filtreCategorie);
+            return 'Réservations — ' . ($cat?->libelle ?? '');
+        }
+        return 'Réservations de ressources';
+    }
+
+    /* ── DateSelect → ouvrir modal création ──────────────────────────────── */
+
+    protected function onDateSelect(DateSelectInfo $info): void
+    {
+        if (! auth()->check()) return;
+
+        $this->newDebut       = $info->start->toDateTimeString();
+        $this->newFin         = $info->end->toDateTimeString();
+        $this->newRessourceId = null;
+
+        $this->mountAction('nouvelleResa');
+    }
+
+    /* ── EventClick → ouvrir modal vue ───────────────────────────────────── */
+
+    protected function onEventClick(EventClickInfo $info, Model $event, ?string $action = null): void
+    {
+        $this->viewingId = $info->record->id;
+        $this->mountAction('voirResa');
+    }
+
+    /* ── Drag & Resize ────────────────────────────────────────────────────── */
+
+    protected function onEventDrop(EventDropInfo $info, Model $event): bool
+    {
+        $record = $info->record;
+        if (! $this->adminMode && $record->user_id !== auth()->id()) return false;
+        $record->update(['debut' => $info->event->getStart(), 'fin' => $info->event->getEnd()]);
+        return true;
+    }
+
+    public function onEventResize(EventResizeInfo $info, Model $event): bool
+    {
+        $record = $info->record;
+        if (! $this->adminMode && $record->user_id !== auth()->id()) return false;
+        $record->update(['fin' => $info->event->getEnd()]);
+        return true;
+    }
+
+    /* ── Header actions ───────────────────────────────────────────────────── */
+
+    public function getHeaderActions(): array
+    {
+        $actions = [];
+
+        if ($this->etape === 'gantt' && $this->filtreUnite) {
+            $actions[] = Action::make('retourUnites')
+                ->label('Changer d\'unité')
+                ->color('gray')
+                ->icon('heroicon-o-arrow-left')
+                ->action(fn () => $this->retourUnites());
         }
 
-        return $planning;
-    }
+        if ($this->etape === 'gantt') {
+            $actions[] = Action::make('nouvelleResa')
+                ->label('Nouvelle réservation')
+                ->icon('heroicon-o-plus')
+                ->color('primary')
+                ->schema($this->getNouvelleResaForm())
+                ->action(fn (array $data) => $this->creerReservation($data))
+                ->fillForm(fn () => [
+                    'ressource_id' => $this->newRessourceId,
+                    'debut'        => $this->newDebut,
+                    'fin'          => $this->newFin,
+                ]);
 
-    public function getRowsJour(): array
-    {
-        $heures   = $this->getHeures();
-        $planning = $this->getPlanningJour();
-        $rows     = [];
-
-        foreach ($this->getCategories() as $categorie) {
-            $ressourceRows = [];
-            foreach ($categorie->ressourcesActivesForUser as $ressource) {
-                $cells = [];
-                $i     = 0;
-                $count = count($heures);
-                while ($i < $count) {
-                    $heure = $heures[$i];
-                    $resa  = $planning[$ressource->id][$heure] ?? null;
-                    if ($resa) {
-                        $colspan = 1;
-                        for ($j = $i + 1; $j < $count; $j++) {
-                            if (isset($planning[$ressource->id][$heures[$j]])
-                                && $planning[$ressource->id][$heures[$j]]->id === $resa->id) {
-                                $colspan++;
-                            } else break;
-                        }
-                        $cells[] = ['type' => 'reservation', 'resa' => $resa, 'colspan' => $colspan];
-                        $i += $colspan;
-                    } else {
-                        $cells[] = ['type' => 'empty', 'heure' => $heure, 'ressource_id' => $ressource->id];
-                        $i++;
-                    }
-                }
-                $ressourceRows[] = ['ressource' => $ressource, 'cells' => $cells];
-            }
-            if (! empty($ressourceRows)) {
-                $rows[] = ['categorie' => $categorie, 'ressources' => $ressourceRows];
-            }
+            $actions[] = Action::make('voirResa')
+                ->label('Réservation')
+                ->icon('heroicon-o-eye')
+                ->color('gray')
+                ->visible(false)
+                ->schema($this->getVoirResaForm())
+                ->fillForm(fn () => $this->fillVoirResaForm())
+                ->action(fn () => $this->actionVoirResa());
         }
 
-        return $rows;
+        return $actions;
     }
 
-    /* ── Données vue SEMAINE ──────────────────────────────────────────────── */
+    /* ── Form création ────────────────────────────────────────────────────── */
 
-    public function getPlanningData(): array
+    private function getNouvelleResaForm(): array
     {
-        $debut = Carbon::parse($this->semaineDebut)->startOfDay();
-        $fin   = $debut->copy()->addDays(6)->endOfDay();
+        $ressources = $this->getResources();
 
-        $reservations = RessourceReservation::with(['user', 'ressource'])
-            ->where('debut', '<=', $fin)
-            ->where('fin',   '>=', $debut)
-            ->get();
+        return [
+            \Filament\Forms\Components\Select::make('ressource_id')
+                ->label('Ressource')
+                ->options($ressources->pluck('nom', 'id'))
+                ->required()
+                ->searchable(),
 
-        $planning = [];
-        foreach ($reservations as $resa) {
-            $day = Carbon::parse(max($resa->debut->format('Y-m-d'), $debut->format('Y-m-d')));
-            $end = Carbon::parse(min($resa->fin->format('Y-m-d'),   $fin->format('Y-m-d')));
-            while ($day <= $end) {
-                $planning[$resa->ressource_id][$day->format('Y-m-d')] = $resa;
-                $day->addDay();
-            }
-        }
+            DateTimePicker::make('debut')
+                ->label('Début')
+                ->required()
+                ->seconds(false),
 
-        return $planning;
+            DateTimePicker::make('fin')
+                ->label('Fin')
+                ->required()
+                ->seconds(false)
+                ->after('debut'),
+
+            Textarea::make('libelle')
+                ->label('Objet')
+                ->rows(2),
+        ];
     }
 
-    public function getRowsSemaine(): array
+    private function creerReservation(array $data): void
     {
-        $jours    = $this->getJoursSemaine();
-        $planning = $this->getPlanningData();
-        $rows     = [];
-
-        foreach ($this->getCategories() as $categorie) {
-            $ressourceRows = [];
-            foreach ($categorie->ressourcesActivesForUser as $ressource) {
-                $cells = [];
-                $i     = 0;
-                while ($i < 7) {
-                    $dateStr = $jours[$i]->format('Y-m-d');
-                    $resa    = $planning[$ressource->id][$dateStr] ?? null;
-                    if ($resa) {
-                        $colspan = 1;
-                        for ($j = $i + 1; $j < 7; $j++) {
-                            $nextDate = $jours[$j]->format('Y-m-d');
-                            if (isset($planning[$ressource->id][$nextDate])
-                                && $planning[$ressource->id][$nextDate]->id === $resa->id) {
-                                $colspan++;
-                            } else break;
-                        }
-                        $cells[] = ['type' => 'reservation', 'resa' => $resa, 'colspan' => $colspan];
-                        $i += $colspan;
-                    } else {
-                        $cells[] = [
-                            'type'         => 'empty',
-                            'date'         => $dateStr,
-                            'ressource_id' => $ressource->id,
-                            'weekend'      => $jours[$i]->isWeekend(),
-                        ];
-                        $i++;
-                    }
-                }
-                $ressourceRows[] = ['ressource' => $ressource, 'cells' => $cells];
-            }
-            if (! empty($ressourceRows)) {
-                $rows[] = ['categorie' => $categorie, 'ressources' => $ressourceRows];
-            }
-        }
-
-        return $rows;
-    }
-
-    /* ── Données vue GANTT ────────────────────────────────────────────────── */
-
-    /**
-     * Retourne les réservations de la semaine groupées par ressource_id,
-     * avec left% et width% calculés sur la timeline lun-dim 08h-18h.
-     * Total slots = 7 jours × 10 heures = 70
-     */
-    public function getRowsGantt(): array
-    {
-        $debut = Carbon::parse($this->semaineDebut)->startOfDay();
-        $fin   = $debut->copy()->addDays(6)->endOfDay();
-        $total = 7 * (self::HEURE_FIN - self::HEURE_DEBUT); // 70
-
-        $reservations = RessourceReservation::with(['user', 'ressource'])
-            ->where('debut', '<', $fin)
-            ->where('fin',   '>', $debut)
-            ->orderBy('debut')
-            ->get();
-
-        // Indexer par ressource
-        $byRessource = [];
-        foreach ($reservations as $resa) {
-            // Clamp aux bornes de la semaine + heures ouverture
-            $resaDebut = $resa->debut->copy();
-            $resaFin   = $resa->fin->copy();
-
-            // Offset en heures depuis lun 08h00
-            $offsetDebut = $debut->copy()->setTime(self::HEURE_DEBUT, 0)->diffInMinutes($resaDebut->max($debut->copy()->setTime(self::HEURE_DEBUT, 0)), false);
-            $offsetFin   = $debut->copy()->setTime(self::HEURE_DEBUT, 0)->diffInMinutes($resaFin->min($fin->copy()->setTime(self::HEURE_FIN, 0)), false);
-
-            $offsetDebut = max(0, $offsetDebut);
-            $offsetFin   = min($total * 60, $offsetFin);
-
-            if ($offsetFin <= $offsetDebut) continue;
-
-            $left  = round($offsetDebut / ($total * 60) * 100, 4);
-            $width = round(($offsetFin - $offsetDebut) / ($total * 60) * 100, 4);
-
-            $byRessource[$resa->ressource_id][] = compact('resa', 'left', 'width');
-        }
-
-        $rows = [];
-        foreach ($this->getCategories() as $categorie) {
-            $ressourceRows = [];
-            foreach ($categorie->ressourcesActivesForUser as $ressource) {
-                $bars = $byRessource[$ressource->id] ?? [];
-                $ressourceRows[] = ['ressource' => $ressource, 'bars' => $bars];
-            }
-            if (! empty($ressourceRows)) {
-                $rows[] = ['categorie' => $categorie, 'ressources' => $ressourceRows];
-            }
-        }
-
-        return $rows;
-    }
-
-    /* ── Création ─────────────────────────────────────────────────────────── */
-
-    public function ouvrirModal(int $ressourceId, string $debutStr, ?string $finStr = null): void
-    {
-        $this->modalRessourceId = $ressourceId;
-        $this->modalDebut       = $debutStr;
-        $this->modalFin         = $finStr ?? $debutStr;
-        $this->modalLibelle     = '';
-        $this->modalErrors      = [];
-        $this->showModal        = true;
-    }
-
-    public function fermerModal(): void
-    {
-        $this->showModal   = false;
-        $this->modalErrors = [];
-    }
-
-    public function creerReservation(): void
-    {
-        $validator = Validator::make([
-            'ressource_id' => $this->modalRessourceId,
-            'debut'        => $this->modalDebut,
-            'fin'          => $this->modalFin,
-        ], [
-            'ressource_id' => 'required|exists:resa_ressources,id',
-            'debut'        => 'required|date',
-            'fin'          => 'required|date|after:debut',
-        ], [
-            'fin.after'      => 'La fin doit être après le début.',
-            'debut.required' => 'La date/heure de début est obligatoire.',
-        ]);
-
-        if ($validator->fails()) {
-            $this->modalErrors = $validator->errors()->all();
-            return;
-        }
-
-        $conflit = RessourceReservation::where('ressource_id', $this->modalRessourceId)
-            ->where('debut', '<', $this->modalFin)
-            ->where('fin',   '>', $this->modalDebut)
+        // Vérifier conflit
+        $conflit = RessourceReservation::where('ressource_id', $data['ressource_id'])
+            ->where('debut', '<', $data['fin'])
+            ->where('fin',   '>', $data['debut'])
             ->exists();
 
         if ($conflit) {
-            $this->modalErrors = ['Cette ressource est déjà réservée sur cette période.'];
+            Notification::make()->title('Conflit de réservation')
+                ->body('Cette ressource est déjà réservée sur ce créneau.')
+                ->danger()->send();
             return;
         }
 
         RessourceReservation::create([
             'user_id'      => auth()->id(),
-            'ressource_id' => $this->modalRessourceId,
-            'libelle'      => $this->modalLibelle,
-            'debut'        => $this->modalDebut,
-            'fin'          => $this->modalFin,
+            'ressource_id' => $data['ressource_id'],
+            'libelle'      => $data['libelle'] ?? null,
+            'debut'        => $data['debut'],
+            'fin'          => $data['fin'],
             'validation'   => $this->adminMode ? RessourceReservation::VALIDE : RessourceReservation::EN_ATTENTE,
             'validated_by' => $this->adminMode ? auth()->id() : null,
             'validated_at' => $this->adminMode ? now() : null,
         ]);
 
-        $this->showModal   = false;
-        $this->modalErrors = [];
+        $this->refreshRecords();
+        $this->newDebut = $this->newFin = null;
+        $this->newRessourceId = null;
     }
 
-    /* ── Vue / actions ────────────────────────────────────────────────────── */
+    /* ── Form voir réservation ────────────────────────────────────────────── */
 
-    public function voirReservation(int $id): void
+    private function getVoirResaForm(): array
     {
-        $this->viewingReservationId = $id;
-        $this->showViewModal        = true;
+        return [
+            \Filament\Forms\Components\Placeholder::make('info')
+                ->label('')
+                ->content(function () {
+                    $r = $this->viewingId ? RessourceReservation::with(['ressource', 'user', 'validatedBy'])->find($this->viewingId) : null;
+                    if (! $r) return '';
+                    $statut = $r->isValide()
+                        ? '✅ Validée par ' . ($r->validatedBy?->nom ?? '') . ' le ' . $r->validated_at?->format('d/m/Y H:i')
+                        : '⏳ En attente de validation';
+                    return implode("\n", array_filter([
+                        '📦 ' . ($r->ressource?->nom ?? ''),
+                        '📝 ' . ($r->libelle ?: '(sans objet)'),
+                        '🕐 ' . $r->debut?->format('d/m/Y H:i') . ' → ' . $r->fin?->format('H:i'),
+                        '👤 ' . ($r->user?->nom ?? ''),
+                        $statut,
+                    ]));
+                }),
+        ];
     }
 
-    public function fermerViewModal(): void
+    private function fillVoirResaForm(): array
     {
-        $this->showViewModal        = false;
-        $this->viewingReservationId = null;
+        return [];
     }
 
-    public function validerReservation(int $id): void
+    private function actionVoirResa(): void
     {
-        if (! $this->adminMode) return;
-        RessourceReservation::find($id)?->valider(auth()->user());
-        $this->fermerViewModal();
     }
 
-    public function invaliderReservation(int $id): void
+    public function validerReservation(): void
     {
-        if (! $this->adminMode) return;
-        RessourceReservation::find($id)?->invalider();
-        $this->fermerViewModal();
+        if (! $this->adminMode || ! $this->viewingId) return;
+        RessourceReservation::find($this->viewingId)?->valider(auth()->user());
+        $this->refreshRecords();
+        $this->viewingId = null;
     }
 
-    public function supprimerReservation(int $id): void
+    public function invaliderReservation(): void
     {
-        $resa = RessourceReservation::find($id);
-        if (! $resa) return;
-        if (! $this->adminMode && $resa->user_id !== auth()->id()) return;
-        $resa->delete();
-        $this->fermerViewModal();
+        if (! $this->adminMode || ! $this->viewingId) return;
+        RessourceReservation::find($this->viewingId)?->invalider();
+        $this->refreshRecords();
+        $this->viewingId = null;
     }
 
-    public function getViewingReservation(): ?RessourceReservation
+    public function supprimerReservation(): void
     {
-        if (! $this->viewingReservationId) return null;
-        return RessourceReservation::with(['user', 'ressource.categorie', 'validatedBy'])
-            ->find($this->viewingReservationId);
+        if (! $this->viewingId) return;
+        $r = RessourceReservation::find($this->viewingId);
+        if (! $r) return;
+        if (! $this->adminMode && $r->user_id !== auth()->id()) return;
+        $r->delete();
+        $this->refreshRecords();
+        $this->viewingId = null;
     }
 }
 
