@@ -4,13 +4,13 @@ namespace Modules\Resa\Filament\Resources;
 
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
-use Filament\Forms\Components\ColorPicker;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
-use Filament\Tables\Columns\ColorColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
+use Modules\Resa\Filament\Resources\TypeSalles\Schemas\TypeSalleForm;
 use Modules\Resa\Filament\Resources\RessourceCategorieResource\Pages\ListRessourceCategories;
 use Modules\Resa\Filament\Resources\RessourceCategorieResource\Pages\CreateRessourceCategorie;
 use Modules\Resa\Filament\Resources\RessourceCategorieResource\Pages\EditRessourceCategorie;
@@ -36,8 +36,15 @@ class RessourceCategorieResource extends Resource
             TextInput::make('libelle')->label('Libellé')->required()->maxLength(255)->columnSpanFull(),
             TextInput::make('libelle_court')->label('Libellé court')->maxLength(50),
             TextInput::make('ordre')->label('Ordre')->numeric()->default(0),
-            TextInput::make('icone')->label('Icône Heroicon')->placeholder('heroicon-o-truck')->maxLength(100),
-            TextInput::make('couleur')->label('Couleur (Tailwind)')->placeholder('primary')->maxLength(50),
+            Select::make('icone')
+                ->label('Icône')
+                ->searchable()
+                ->options(TypeSalleForm::iconOptions())
+                ->placeholder('Choisir une icône'),
+            Select::make('couleur')
+                ->label('Couleur')
+                ->options(TypeSalleForm::colorOptions())
+                ->placeholder('Choisir une couleur'),
         ]);
     }
 
@@ -69,3 +76,5 @@ class RessourceCategorieResource extends Resource
         ];
     }
 }
+
+

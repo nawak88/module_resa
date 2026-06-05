@@ -10,8 +10,9 @@ class RessourcesMenuWidget extends Widget
 {
     protected string $view = 'resa::filament.widgets.ressources-menu-widget';
 
-    protected static bool $isLazy = false;
-    protected static ?int $sort   = 20;
+    protected static bool $isDiscovered = false;
+    protected static bool $isLazy      = false;
+    protected static ?int $sort        = 20;
 
     protected int | string | array $columnSpan = 'full';
 
@@ -46,5 +47,3 @@ class RessourcesMenuWidget extends Widget
         return RessourcesPage::getUrl(['categorie' => $id]);
     }
 }
-
-

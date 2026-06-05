@@ -29,6 +29,8 @@ class CalendrierWidget extends CalendarWidget
 {
     protected string $view = 'resa::filament.widgets.calendrier-widget';
 
+    protected static bool $isDiscovered = false;
+
     protected CalendarViewType $calendarView = CalendarViewType::TimeGridWeek;
 
     protected bool $eventClickEnabled  = true;
@@ -95,12 +97,21 @@ class CalendrierWidget extends CalendarWidget
             return;
         }
 
+        // Si uniteActive est injecté depuis une page parente, sauter la navigation lieu/unité
+        if ($this->uniteActive !== null) {
+            if ($this->lieuActive === null) {
+                $this->lieuActive = Unite::find($this->uniteActive)?->lieu_unite_id;
+            }
+            $this->resoudreDepuisUnite();
+            return;
+        }
+
         $this->resoudreNavigation();
     }
 
     /* ── Resolution automatique de la navigation ──────────────────────────── */
 
-    private function resoudreNavigation(): void
+    protected function resoudreNavigation(): void
     {
         // Si aucune salle n'a de unite_id → ancien comportement sans lieu/unite
         if (! Salle::whereNotNull('unite_id')->exists()) {
@@ -147,7 +158,7 @@ class CalendrierWidget extends CalendarWidget
         $this->resoudreDepuisUnite();
     }
 
-    private function resoudreDepuisUnite(): void
+    protected function resoudreDepuisUnite(): void
     {
         $salles = $this->getSallesScope()->with('typeSalle')->orderBy('ordre')->get();
 

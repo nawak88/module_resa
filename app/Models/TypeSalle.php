@@ -18,6 +18,8 @@ class TypeSalle extends Model
         'libelle_long',
         'ordre',
         'mode',
+        'icone',
+        'couleur',
     ];
 
     protected $casts = [
@@ -49,3 +51,5 @@ class TypeSalle extends Model
         return $query->where('mode', self::MODE_CLASSIQUE);
     }
 }
+
+
