@@ -29,6 +29,22 @@ class ReservationUnifieeWidget extends Widget
 
     public function mount(): void
     {
+        $lieuId  = session('resa_nav_lieu');
+        $uniteId = session('resa_nav_unite');
+
+        if ($uniteId) {
+            $this->lieuActive  = $lieuId ? (int) $lieuId : null;
+            $this->uniteActive = (int) $uniteId;
+            $this->etape       = 'contenu';
+            return;
+        }
+
+        if ($lieuId) {
+            $this->lieuActive = (int) $lieuId;
+            $this->resoudreDepuisLieu();
+            return;
+        }
+
         $this->resoudreNavigation();
     }
 
@@ -76,6 +92,7 @@ class ReservationUnifieeWidget extends Widget
     {
         $this->lieuActive  = $id;
         $this->uniteActive = null;
+        session(['resa_nav_lieu' => $this->lieuActive, 'resa_nav_unite' => $this->uniteActive]);
         $this->resoudreDepuisLieu();
     }
 
@@ -83,6 +100,7 @@ class ReservationUnifieeWidget extends Widget
     {
         $this->uniteActive = $id;
         $this->etape       = 'contenu';
+        session(['resa_nav_lieu' => $this->lieuActive, 'resa_nav_unite' => $this->uniteActive]);
     }
 
     public function retourLieux(): void
@@ -90,12 +108,14 @@ class ReservationUnifieeWidget extends Widget
         $this->lieuActive  = null;
         $this->uniteActive = null;
         $this->etape       = 'lieu';
+        session()->forget(['resa_nav_lieu', 'resa_nav_unite']);
     }
 
     public function retourUnites(): void
     {
         $this->uniteActive = null;
         $this->etape       = 'unite';
+        session()->forget('resa_nav_unite');
     }
 
     public function getLieux(): \Illuminate\Support\Collection

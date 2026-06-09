@@ -30,6 +30,22 @@ class ReservationUnifiee extends Page
 
     public function mount(): void
     {
+        $lieuId  = session('resa_nav_lieu');
+        $uniteId = session('resa_nav_unite');
+
+        if ($uniteId) {
+            $this->lieuActive  = $lieuId ? (int) $lieuId : null;
+            $this->uniteActive = (int) $uniteId;
+            $this->etape       = 'contenu';
+            return;
+        }
+
+        if ($lieuId) {
+            $this->lieuActive = (int) $lieuId;
+            $this->resoudreDepuisLieu();
+            return;
+        }
+
         $this->resoudreNavigation();
     }
 
@@ -79,6 +95,7 @@ class ReservationUnifiee extends Page
     {
         $this->lieuActive  = $id;
         $this->uniteActive = null;
+        session(['resa_nav_lieu' => $this->lieuActive, 'resa_nav_unite' => $this->uniteActive]);
         $this->resoudreDepuisLieu();
     }
 
@@ -86,6 +103,7 @@ class ReservationUnifiee extends Page
     {
         $this->uniteActive = $id;
         $this->etape       = 'contenu';
+        session(['resa_nav_lieu' => $this->lieuActive, 'resa_nav_unite' => $this->uniteActive]);
     }
 
     public function retourLieux(): void
@@ -93,12 +111,14 @@ class ReservationUnifiee extends Page
         $this->lieuActive  = null;
         $this->uniteActive = null;
         $this->etape       = 'lieu';
+        session()->forget(['resa_nav_lieu', 'resa_nav_unite']);
     }
 
     public function retourUnites(): void
     {
         $this->uniteActive = null;
         $this->etape       = 'unite';
+        session()->forget('resa_nav_unite');
     }
 
     /* ── Données pour les cartes ──────────────────────────────────────────── */
@@ -138,7 +158,13 @@ class ReservationUnifiee extends Page
     {
         if ($this->etape !== 'contenu') return [];
 
-        $widgets = [CalendrierWidget::class];
+        $widgets = [];
+
+        if (! auth()->check()) {
+            $widgets[] = \Modules\Resa\Filament\Widgets\LoginModalWidget::class;
+        }
+
+        $widgets[] = CalendrierWidget::class;
 
         if ($this->hasRessources()) {
             $widgets[] = RessourceGanttWidget::class;
@@ -161,5 +187,3 @@ class ReservationUnifiee extends Page
         ];
     }
 }
-
-

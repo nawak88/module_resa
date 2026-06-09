@@ -5,7 +5,9 @@ namespace Modules\Resa\Filament\Widgets;
 use Filament\Actions\Action;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Textarea;
+use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
+use Filament\Schemas\Components\Grid;
 use Guava\Calendar\Enums\CalendarViewType;
 use Guava\Calendar\Filament\CalendarWidget;
 use Guava\Calendar\ValueObjects\DateSelectInfo;
@@ -32,11 +34,12 @@ class RessourceGanttWidget extends CalendarWidget
 
     protected CalendarViewType $calendarView = CalendarViewType::ResourceTimelineWeek;
 
-    protected bool $eventClickEnabled  = true;
-    protected bool $dateSelectEnabled  = true;
-    protected bool $eventDragEnabled   = true;
-    protected bool $eventResizeEnabled = true;
-    protected ?string $locale          = 'fr';
+    protected bool $eventClickEnabled   = true;
+    protected bool $dateSelectEnabled   = true;
+    protected bool $eventDragEnabled    = true;
+    protected bool $eventResizeEnabled  = true;
+    protected ?string $locale           = 'fr';
+    protected bool $useFilamentTimezone = true;
 
     // Navigation
     public string  $etape           = 'gantt'; // 'lieu' | 'unite' | 'gantt'
@@ -330,10 +333,15 @@ class RessourceGanttWidget extends CalendarWidget
                 ->label('Réservation')
                 ->icon('heroicon-o-eye')
                 ->color('gray')
-                ->visible(false)
-                ->schema($this->getVoirResaForm())
-                ->fillForm(fn () => $this->fillVoirResaForm())
-                ->action(fn () => $this->actionVoirResa());
+                ->extraAttributes(['style' => 'display:none'])
+                ->modalHeading(fn () => $this->viewingId
+                    ? (RessourceReservation::find($this->viewingId)?->ressource?->nom ?? 'Réservation')
+                    : 'Réservation'
+                )
+                ->modalSubmitAction(false)
+                ->schema(fn (): array => $this->getVoirResaForm())
+                ->extraModalFooterActions(fn (): array => $this->getVoirResaFooterActions())
+                ->action(fn () => null);
         }
 
         return $actions;
@@ -404,61 +412,87 @@ class RessourceGanttWidget extends CalendarWidget
 
     private function getVoirResaForm(): array
     {
+        $r = fn () => $this->viewingId
+            ? RessourceReservation::with(['ressource', 'user', 'validatedBy'])->find($this->viewingId)
+            : null;
+
         return [
-            \Filament\Forms\Components\Placeholder::make('info')
-                ->label('')
-                ->content(function () {
-                    $r = $this->viewingId ? RessourceReservation::with(['ressource', 'user', 'validatedBy'])->find($this->viewingId) : null;
-                    if (! $r) return '';
-                    $statut = $r->isValide()
-                        ? '✅ Validée par ' . ($r->validatedBy?->nom ?? '') . ' le ' . $r->validated_at?->format('d/m/Y H:i')
-                        : '⏳ En attente de validation';
-                    return implode("\n", array_filter([
-                        '📦 ' . ($r->ressource?->nom ?? ''),
-                        '📝 ' . ($r->libelle ?: '(sans objet)'),
-                        '🕐 ' . $r->debut?->format('d/m/Y H:i') . ' → ' . $r->fin?->format('H:i'),
-                        '👤 ' . ($r->user?->nom ?? ''),
-                        $statut,
-                    ]));
-                }),
+            Grid::make(2)->schema([
+                TextEntry::make('debut_ph')
+                    ->label('Début')
+                    ->getStateUsing(fn () => $r()?->debut?->format('d/m/Y H:i') ?? '—'),
+
+                TextEntry::make('fin_ph')
+                    ->label('Fin')
+                    ->getStateUsing(fn () => $r()?->fin?->format('d/m/Y H:i') ?? '—'),
+            ]),
+
+            TextEntry::make('ressource_ph')
+                ->label('Ressource')
+                ->getStateUsing(fn () => $r()?->ressource?->nom ?? '—'),
+
+            TextEntry::make('libelle_ph')
+                ->label('Objet')
+                ->getStateUsing(fn () => $r()?->libelle ?: '(sans objet)'),
+
+            TextEntry::make('user_ph')
+                ->label('Réservé par')
+                ->getStateUsing(fn () => $r()?->user?->nom ?? '—'),
+
+            TextEntry::make('statut_ph')
+                ->label('Statut')
+                ->getStateUsing(fn () => $r()?->isValide() ? 'Validée' : 'En attente')
+                ->badge()
+                ->color(fn ($state) => $state === 'Validée' ? 'success' : 'warning'),
+
+            TextEntry::make('valide_par_ph')
+                ->label('Validée par')
+                ->visible(fn () => $this->viewingId && $r()?->isValide())
+                ->getStateUsing(fn () => ($r()?->validatedBy?->nom ?? '') . ' — ' . ($r()?->validated_at?->format('d/m/Y H:i') ?? '')),
         ];
     }
 
-    private function fillVoirResaForm(): array
+    private function getVoirResaFooterActions(): array
     {
-        return [];
-    }
+        if (! $this->viewingId) return [];
 
-    private function actionVoirResa(): void
-    {
-    }
-
-    public function validerReservation(): void
-    {
-        if (! $this->adminMode || ! $this->viewingId) return;
-        RessourceReservation::find($this->viewingId)?->valider(auth()->user());
-        $this->refreshRecords();
-        $this->viewingId = null;
-    }
-
-    public function invaliderReservation(): void
-    {
-        if (! $this->adminMode || ! $this->viewingId) return;
-        RessourceReservation::find($this->viewingId)?->invalider();
-        $this->refreshRecords();
-        $this->viewingId = null;
-    }
-
-    public function supprimerReservation(): void
-    {
-        if (! $this->viewingId) return;
         $r = RessourceReservation::find($this->viewingId);
-        if (! $r) return;
-        if (! $this->adminMode && $r->user_id !== auth()->id()) return;
-        $r->delete();
-        $this->refreshRecords();
-        $this->viewingId = null;
+        if (! $r) return [];
+
+        $actions = [];
+
+        $canModify = (! $r->isValide()) && ($this->adminMode || auth()->id() === $r->user_id);
+
+        if ($canModify) {
+            $actions[] = Action::make('supprimer_resa')
+                ->label('Supprimer')
+                ->color('danger')
+                ->icon('heroicon-o-trash')
+                ->requiresConfirmation()
+                ->action(function () use ($r): void {
+                    $id = $r->id;
+                    $this->viewingId = null;
+                    RessourceReservation::destroy($id);
+                    $this->refreshRecords();
+                    Notification::make()->title('Réservation supprimée')->success()->send();
+                });
+        }
+
+        if ($this->adminMode) {
+            $actions[] = Action::make('toggle_validation')
+                ->label($r->isValide() ? 'Invalider' : 'Valider')
+                ->color($r->isValide() ? 'warning' : 'success')
+                ->icon($r->isValide() ? 'heroicon-o-x-circle' : 'heroicon-o-check-circle')
+                ->action(function () use ($r): void {
+                    $r->isValide() ? $r->invalider() : $r->valider(auth()->user());
+                    $this->refreshRecords();
+                    Notification::make()->title($r->fresh()->isValide() ? 'Validée' : 'Invalidée')->success()->send();
+                });
+        }
+
+        return $actions;
     }
+
 }
 
 

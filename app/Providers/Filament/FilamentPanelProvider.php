@@ -5,6 +5,7 @@ namespace Modules\Resa\Providers\Filament;
 use Filament\Pages\Dashboard;
 use Filament\Support\Enums\Width;
 use Modules\Resa\Filament\Widgets\CalendrierWidget;
+use Modules\Resa\Filament\Widgets\LoginModalWidget;
 use Modules\Resa\Filament\Widgets\ReservationUnifieeWidget;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
@@ -64,6 +65,7 @@ class FilamentPanelProvider extends PanelProvider
             ])
             ->discoverWidgets(in: module_path($this->module, 'app/Filament/Widgets'), for: "$moduleNamespace\\Filament\\Widgets")
             ->widgets([
+                LoginModalWidget::class,
                 ReservationUnifieeWidget::class,
                 //PanelSwitcher::class,
                 #Widgets\AccountWidget::class,

@@ -16,7 +16,7 @@
 </style>
 
 @if($etape === 'lieu')
-    @php $lieux = $this->getLieux(); @endphp
+    @php $lieux = $this->getLieux();  @endphp
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         @foreach($lieux as $lieu)
             <button wire:click="selectLieu({{ $lieu->id }})" class="ru-card ru-card-lieu">
@@ -62,7 +62,7 @@
 @else
     <div class="mb-4 flex gap-2">
         <x-filament::button wire:click="retourUnites" color="gray" icon="heroicon-o-arrow-left" size="sm">
-            Changer d'unité
+            Changer d'unité 
         </x-filament::button>
     </div>
 
