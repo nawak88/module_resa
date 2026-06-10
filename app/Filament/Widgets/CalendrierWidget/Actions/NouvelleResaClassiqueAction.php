@@ -2,15 +2,20 @@
 
 namespace Modules\Resa\Filament\Widgets\CalendrierWidget\Actions;
 
+use App\Models\AnnuaireUser;
+use App\Models\User;
 use Filament\Actions\Action;
 use Filament\Forms\Components\DateTimePicker;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
+use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Grid;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Wizard;
 use Filament\Schemas\Components\Wizard\Step;
+use Illuminate\Validation\ValidationException;
 use Modules\Resa\Models\Reservation;
 use Modules\Resa\Models\Salle;
 use Modules\Resa\Models\SallePoste;
@@ -27,6 +32,7 @@ class NouvelleResaClassiqueAction
                 $form->fill([
                     'debut'         => $widget->etapeDebut ?? now()->setTime(8, 0)->toDateTimeString(),
                     'fin'           => $widget->etapeFin   ?? now()->setTime(9, 0)->toDateTimeString(),
+                    'user_id'       => auth()->id(),
                     'libelle_court' => null,
                     'libelle_long'  => null,
                 ]);
@@ -69,7 +75,7 @@ class NouvelleResaClassiqueAction
                 }
 
                 Reservation::create([
-                    'user_id'             => auth()->id(),
+                    'user_id'             => $data['user_id'] ?? auth()->id(),
                     'salle_poste_id'      => $poste->id,
                     'libelle_court'       => $data['libelle_court'],
                     'libelle_long'        => $data['libelle_long'] ?? null,
@@ -156,6 +162,8 @@ class NouvelleResaClassiqueAction
 
     private static function etape2(object $widget): Step
     {
+        $isIntradef = config('skeletor.reseau_de_deploiement') === 'intradef';
+
         return Step::make('Informations')
             ->icon('heroicon-o-pencil-square')
             ->schema([
@@ -168,6 +176,18 @@ class NouvelleResaClassiqueAction
                             . \Carbon\Carbon::parse($widget->etapeFin)->format('H:i');
                     }),
 
+                Select::make('user_id')
+                    ->label('Réservation pour')
+                    ->options(fn () => User::orderBy('nom')->get()->mapWithKeys(fn ($u) => [$u->id => trim("{$u->nom} {$u->prenom}")]))
+                    ->searchable()
+                    ->required()
+                    ->default(auth()->id())
+                    ->columnSpanFull(),
+
+                ...($isIntradef ? [
+                    Actions::make([self::annuaireAction()])->columnSpanFull(),
+                ] : []),
+
                 TextInput::make('libelle_court')
                     ->label('Intitule de la reservation')
                     ->required()
@@ -179,6 +199,88 @@ class NouvelleResaClassiqueAction
                     ->rows(3)
                     ->columnSpanFull(),
             ]);
+    }
+
+    private static function annuaireAction(): Action
+    {
+        return Action::make('annuaire_user')
+            ->label('Rechercher dans l\'annuaire')
+            ->icon('heroicon-o-magnifying-glass')
+            ->color('gray')
+            ->modalHeading('Recherche annuaire')
+            ->schema([
+                Wizard::make([
+                    Step::make('Critères')
+                        ->icon('heroicon-o-magnifying-glass')
+                        ->schema([
+                            Grid::make(2)->schema([
+                                TextInput::make('ann_nom')->label('Nom'),
+                                TextInput::make('ann_prenom')->label('Prénom'),
+                                TextInput::make('ann_email')->label('Email'),
+                                TextInput::make('ann_unite')->label('Unité'),
+                            ]),
+                        ])
+                        ->afterValidation(function ($get, $set) {
+                            $ok = AnnuaireUser::setQuery([
+                                'nom'    => $get('ann_nom')    ?? '',
+                                'prenom' => $get('ann_prenom') ?? '',
+                                'email'  => $get('ann_email')  ?? '',
+                                'unite'  => $get('ann_unite')  ?? '',
+                            ]);
+                            if (! $ok) {
+                                Notification::make()->title('Annuaire inaccessible')->danger()->send();
+                                throw ValidationException::withMessages(['ann_nom' => 'Annuaire inaccessible.']);
+                            }
+                            $set('ann_resultats', AnnuaireUser::query()->get()
+                                ->mapWithKeys(fn ($u) => [$u->nid => trim("{$u->nom} {$u->prenom}") . ($u->unites ? " ({$u->unites})" : '')])
+                                ->toArray());
+                            $set('ann_nid', null);
+                            $set('ann_data', null);
+                        }),
+
+                    Step::make('Résultats')
+                        ->icon('heroicon-o-user-plus')
+                        ->schema([
+                            Select::make('ann_nid')
+                                ->label('Sélectionner un utilisateur')
+                                ->options(fn ($get) => $get('ann_resultats') ?? [])
+                                ->required()
+                                ->searchable()
+                                ->live()
+                                ->afterStateUpdated(function ($state, $set) {
+                                    if (! $state) return;
+                                    $user = AnnuaireUser::query()->get()->firstWhere('nid', $state);
+                                    if ($user) {
+                                        $set('ann_data', json_encode([
+                                            'nom'    => $user->nom,
+                                            'prenom' => $user->prenom ?? $user->prenomusuel ?? '',
+                                            'email'  => $user->email,
+                                        ]));
+                                    }
+                                }),
+                            \Filament\Forms\Components\Hidden::make('ann_resultats'),
+                            \Filament\Forms\Components\Hidden::make('ann_data'),
+                        ]),
+                ])->columnSpanFull(),
+            ])
+            ->action(function (array $data, $set) {
+                $raw = $data['ann_data'] ?? null;
+                if (! $raw) {
+                    Notification::make()->title('Aucun utilisateur sélectionné.')->warning()->send();
+                    return;
+                }
+                $info = json_decode($raw, true);
+                $existing = User::where('email', $info['email'])->first();
+                if ($existing) {
+                    $set('user_id', $existing->id);
+                    return;
+                }
+                \App\Events\UnUtilisateurLocalDoitEtreCreeEvent::dispatch($info, []);
+                Notification::make()
+                    ->title('Utilisateur ajouté')
+                    ->body(trim("{$info['nom']} {$info['prenom']}") . ' a été créé. Sélectionnez-le dans la liste.')
+                    ->success()->send();
+            });
     }
 }
 

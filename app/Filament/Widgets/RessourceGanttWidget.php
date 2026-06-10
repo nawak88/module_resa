@@ -309,11 +309,11 @@ class RessourceGanttWidget extends CalendarWidget
         $actions = [];
 
         if ($this->etape === 'gantt' && $this->filtreUnite) {
-            $actions[] = Action::make('retourUnites')
-                ->label('Changer d\'unité')
-                ->color('gray')
-                ->icon('heroicon-o-arrow-left')
-                ->action(fn () => $this->retourUnites());
+            // $actions[] = Action::make('retourUnites')
+            //     ->label('Changer d\'unité')
+            //     ->color('gray')
+            //     ->icon('heroicon-o-arrow-left')
+            //     ->action(fn () => $this->retourUnites());
         }
 
         if ($this->etape === 'gantt') {

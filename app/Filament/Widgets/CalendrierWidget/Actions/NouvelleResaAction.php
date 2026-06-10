@@ -181,6 +181,7 @@ class NouvelleResaAction
                 $formation       = isset($widget->etapeFormations[0]) ? Formation::find($widget->etapeFormations[0]) : null;
                 $nbUsersParPoste = $formation?->nb_users_par_poste ?? 1;
                 $isIntradef      = config('skeletor.reseau_de_deploiement') === 'intradef';
+                $showAnnuaire    = $isIntradef || config('skeletor.reseau_de_deploiement') === 'sic21';
 
                 return [
                     TextEntry::make('recap_creneau')
@@ -216,7 +217,7 @@ class NouvelleResaAction
                                 ->columnSpanFull(),
 
                             // ── Bouton annuaire pour user 1 ───────────────
-                            ...($isIntradef ? [
+                            ...($showAnnuaire ? [
                                 \Filament\Schemas\Components\Actions::make([
                                     self::annuaireAction('user_1_id'),
                                 ])->visible(fn ($get) => (bool) $get('selectionne')),
@@ -238,7 +239,7 @@ class NouvelleResaAction
                                 ->visible(fn ($get) => (bool) $get('selectionne') && (bool) $get('ajouter_user_2') && $nbUsersParPoste >= 2)
                                 ->columnSpanFull(),
 
-                            ...($isIntradef ? [
+                            ...($showAnnuaire ? [
                                 \Filament\Schemas\Components\Actions::make([
                                     self::annuaireAction('user_2_id'),
                                 ])->visible(fn ($get) => (bool) $get('selectionne') && (bool) $get('ajouter_user_2') && $nbUsersParPoste >= 2),
@@ -269,12 +270,21 @@ class NouvelleResaAction
                             ]),
                         ])
                         ->afterValidation(function ($get, $set) {
-                            AnnuaireUser::setQuery([
+                            $ok = AnnuaireUser::setQuery([
                                 'nom'    => $get('ann_nom')    ?? '',
                                 'prenom' => $get('ann_prenom') ?? '',
                                 'email'  => $get('ann_email')  ?? '',
                                 'unite'  => $get('ann_unite')  ?? '',
                             ]);
+
+                            if (! $ok) {
+                                Notification::make()
+                                    ->title('Annuaire inaccessible')
+                                    ->body('La connexion à l\'annuaire a expiré. Réessayez dans quelques instants.')
+                                    ->danger()
+                                    ->send();
+                                throw ValidationException::withMessages(['ann_nom' => 'Annuaire inaccessible.']);
+                            }
 
                             $options = AnnuaireUser::query()->get()
                                 ->mapWithKeys(fn ($u) => [

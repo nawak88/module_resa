@@ -47,7 +47,8 @@ class CalendrierWidget extends CalendarWidget
     public ?int    $uniteActive      = null;
     public ?int    $typeSalleActive  = null;
     public ?int    $salleActive      = null;
-    public bool    $skipTypeSalleNav = false; // quand vrai, saute l'étape type_salle
+    public bool    $skipTypeSalleNav = false;
+    public ?string $modeForce        = null;  // 'classique' | 'simulateur' — forcé depuis le parent
 
     // Etat modal
     public bool    $adminMode      = false;
@@ -215,6 +216,12 @@ class CalendrierWidget extends CalendarWidget
             $query->whereIn('unite_id', $uniteIds);
         }
 
+        // Filtrer par mode (classique/simulateur) quand forcé depuis le parent
+        if ($this->modeForce !== null && $this->typeSalleActive === null) {
+            $typeIds = TypeSalle::where('mode', $this->modeForce)->pluck('id');
+            $query->whereIn('type_salle_id', $typeIds);
+        }
+
         return $query;
     }
 
@@ -298,6 +305,7 @@ class CalendrierWidget extends CalendarWidget
     public function getModeActif(): string
     {
         if ($this->_modeActifCache !== null) return $this->_modeActifCache;
+        if ($this->modeForce !== null) return $this->_modeActifCache = $this->modeForce;
         if (! $this->typeSalleActive) return $this->_modeActifCache = TypeSalle::MODE_SIMULATEUR;
         return $this->_modeActifCache = TypeSalle::find($this->typeSalleActive)?->mode ?? TypeSalle::MODE_SIMULATEUR;
     }
@@ -350,16 +358,6 @@ class CalendrierWidget extends CalendarWidget
 
         if ($debutMin < 8 * 60 || $debutMin >= 18 * 60) return "L'heure de debut doit etre entre 08h00 et 18h00.";
         if ($finMin <= 8 * 60 || $finMin > 18 * 60)     return "L'heure de fin doit etre entre 08h00 et 18h00.";
-
-        if (auth()->check()) {
-            $dejaReserve = Reservation::where('user_id', auth()->id())
-                ->when($excludeId, fn ($q) => $q->where('id', '!=', $excludeId))
-                ->where('debut', '<', $fin)
-                ->where('fin',   '>', $debut)
-                ->exists();
-
-            if ($dejaReserve) return 'Vous avez deja une reservation sur ce creneau.';
-        }
 
         return null;
     }
@@ -424,7 +422,12 @@ class CalendrierWidget extends CalendarWidget
                 $q->where('salle_id', $this->salleActive)
             );
         } elseif ($this->uniteActive) {
-            $salleIds = Salle::where('unite_id', $this->uniteActive)->pluck('id');
+            $sallesQuery = Salle::where('unite_id', $this->uniteActive);
+            if ($this->modeForce !== null && $this->typeSalleActive === null) {
+                $typeIds = TypeSalle::where('mode', $this->modeForce)->pluck('id');
+                $sallesQuery->whereIn('type_salle_id', $typeIds);
+            }
+            $salleIds = $sallesQuery->pluck('id');
             $query->whereHas('sallePoste', fn ($q) =>
                 $q->whereIn('salle_id', $salleIds)
             );
