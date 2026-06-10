@@ -252,7 +252,7 @@
 
         {{-- ══ Étape : calendrier ═══════════════════════════════════════════ --}}
         @else
-            <div wire:key="step-calendrier">
+            <div wire:key="step-calendrier"> 
             <div
                 wire:ignore
                 x-load

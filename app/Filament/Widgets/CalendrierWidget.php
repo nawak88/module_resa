@@ -47,6 +47,7 @@ class CalendrierWidget extends CalendarWidget
     public ?int    $uniteActive      = null;
     public ?int    $typeSalleActive  = null;
     public ?int    $salleActive      = null;
+    public bool    $skipTypeSalleNav = false; // quand vrai, saute l'étape type_salle
 
     // Etat modal
     public bool    $adminMode      = false;
@@ -165,6 +166,21 @@ class CalendrierWidget extends CalendarWidget
         if ($salles->count() === 1) {
             $this->salleActive     = $salles->first()->id;
             $this->typeSalleActive = $salles->first()->type_salle_id;
+            $this->etapeNavigation = 'calendrier';
+            return;
+        }
+
+        // Si typeSalleActive est déjà injecté OU qu'on demande à sauter la navigation
+        if ($this->typeSalleActive !== null || $this->skipTypeSalleNav) {
+            $sallesFiltrees = $this->typeSalleActive
+                ? $salles->where('type_salle_id', $this->typeSalleActive)
+                : $salles;
+
+            if ($sallesFiltrees->count() === 1) {
+                $this->salleActive     = $sallesFiltrees->first()->id;
+                $this->typeSalleActive = $sallesFiltrees->first()->type_salle_id;
+            }
+            // Toujours aller direct au calendrier (salleActive peut rester null → toutes les salles)
             $this->etapeNavigation = 'calendrier';
             return;
         }
@@ -407,6 +423,11 @@ class CalendrierWidget extends CalendarWidget
             $query->whereHas('sallePoste', fn ($q) =>
                 $q->where('salle_id', $this->salleActive)
             );
+        } elseif ($this->uniteActive) {
+            $salleIds = Salle::where('unite_id', $this->uniteActive)->pluck('id');
+            $query->whereHas('sallePoste', fn ($q) =>
+                $q->whereIn('salle_id', $salleIds)
+            );
         }
 
         if (! empty($this->filtrePostes)) {
@@ -502,39 +523,39 @@ class CalendrierWidget extends CalendarWidget
             )->count();
 
             if ($nbSalles > 1) {
-                $actions[] = Action::make('retour_salle')
-                    ->label('Changer de salle')
-                    ->color('gray')
-                    ->icon('heroicon-o-arrow-left')
-                    ->action(fn () => $this->retourSalles());
+                // $actions[] = Action::make('retour_salle')
+                //     ->label('Changer de salle')
+                //     ->color('gray')
+                //     ->icon('heroicon-o-arrow-left')
+                //     ->action(fn () => $this->retourSalles());
             } elseif ($nbTypes > 1) {
-                $actions[] = Action::make('retour_type_salle')
-                    ->label('Changer de type')
-                    ->color('gray')
-                    ->icon('heroicon-o-arrow-left')
-                    ->action(fn () => $this->retourTypeSalles());
+                // $actions[] = Action::make('retour_type_salle')
+                //     ->label('Changer de type')
+                //     ->color('gray')
+                //     ->icon('heroicon-o-arrow-left')
+                //     ->action(fn () => $this->retourTypeSalles());
             } elseif ($nbUnites > 1) {
-                $actions[] = Action::make('retour_unite')
-                    ->label('Changer d\'unité')
-                    ->color('gray')
-                    ->icon('heroicon-o-arrow-left')
-                    ->action(fn () => $this->retourUnites());
+                // $actions[] = Action::make('retour_unite')
+                //     ->label('Changer d\'unité')
+                //     ->color('gray')
+                //     ->icon('heroicon-o-arrow-left')
+                //     ->action(fn () => $this->retourUnites());
             } elseif ($nbLieux > 1) {
-                $actions[] = Action::make('retour_lieu')
-                    ->label('Changer de lieu')
-                    ->color('gray')
-                    ->icon('heroicon-o-arrow-left')
-                    ->action(fn () => $this->retourLieux());
+                // $actions[] = Action::make('retour_lieu')
+                //     ->label('Changer de lieu')
+                //     ->color('gray')
+                //     ->icon('heroicon-o-arrow-left')
+                //     ->action(fn () => $this->retourLieux());
             }
         }
 
         if (! auth()->check()) {
-            $actions[] = Action::make('login')
-                ->label('Se connecter pour reserver')
-                ->color('primary')
-                ->icon('heroicon-o-arrow-right-end-on-rectangle')
-                ->url(route('login'));
-            return $actions;
+            // $actions[] = Action::make('login')
+            //     ->label('Se connecter pour reserver')
+            //     ->color('primary')
+            //     ->icon('heroicon-o-arrow-right-end-on-rectangle')
+            //     ->url(route('login'));
+            // return $actions;
         }
 
         if ($this->etapeNavigation === 'calendrier') {

@@ -6,7 +6,7 @@ use Filament\Pages\Dashboard;
 use Filament\Support\Enums\Width;
 use Modules\Resa\Filament\Widgets\CalendrierWidget;
 use Modules\Resa\Filament\Widgets\LoginModalWidget;
-use Modules\Resa\Filament\Widgets\ReservationUnifieeWidget;
+
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
@@ -28,7 +28,7 @@ use Filament\FontProviders\SpatieGoogleFontProvider;
 use Filament\Navigation\NavigationItem;
 
 use App\Filament\AvatarProviders\SkeletorAvatarProvider;
-use Modules\Resa\Filament\Widgets\PanelSwitcher;
+
 use App\Providers\Filament\Traits\UsesSkeletorPrefixAndMultitenancyTrait;
 
 use App\Http\Middleware\InitializeTenancyByPath;
@@ -66,7 +66,7 @@ class FilamentPanelProvider extends PanelProvider
             ->discoverWidgets(in: module_path($this->module, 'app/Filament/Widgets'), for: "$moduleNamespace\\Filament\\Widgets")
             ->widgets([
                 LoginModalWidget::class,
-                ReservationUnifieeWidget::class,
+                \Modules\Resa\Filament\Widgets\ReservationWidget::class,
                 //PanelSwitcher::class,
                 #Widgets\AccountWidget::class,
                 #Widgets\FilamentInfoWidget::class,
@@ -102,7 +102,8 @@ class FilamentPanelProvider extends PanelProvider
             ])
             ->topNavigation()
             ->sidebarCollapsibleOnDesktop()
-            ->maxContentWidth(Width::Full);
+            ->maxContentWidth(Width::Full)
+            ->renderHook('panels::body.start', fn (): string => '<style>.fi-wi{gap:1.25rem!important}</style>');
     }
 
     protected function getModuleNamespace(): string
