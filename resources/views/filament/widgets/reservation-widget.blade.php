@@ -2,17 +2,54 @@
 
 {{-- ─── PAS DE SÉLECTION ────────────────────────────────────────────────────── --}}
 @if(! $this->uniteActive || ! $this->typeResa)
+<style>
+.rw-empty{padding:2.5rem 1.5rem;display:flex;flex-direction:column;align-items:center;gap:0;}
+.rw-empty-hero{width:100%;max-width:480px;margin:0 auto 2rem;display:flex;flex-direction:column;align-items:center;gap:1.5rem;}
+.rw-empty-icon-wrap{width:80px;height:80px;border-radius:20px;background:linear-gradient(135deg,#3b82f6 0%,#6366f1 100%);display:flex;align-items:center;justify-content:center;box-shadow:0 8px 24px rgba(99,102,241,.35);}
+.rw-empty-icon-wrap svg{width:40px;height:40px;color:#fff;}
+.rw-empty-title{font-size:1.5rem;font-weight:700;color:#111827;margin:0;letter-spacing:-.02em;}
+.dark .rw-empty-title{color:#f9fafb;}
+.rw-empty-sub{font-size:.9375rem;color:#6b7280;margin:0;max-width:340px;line-height:1.6;}
+.dark .rw-empty-sub{color:#9ca3af;}
+.rw-steps{display:flex;gap:1rem;margin-bottom:2rem;flex-wrap:wrap;justify-content:center;}
+.rw-step{display:flex;align-items:flex-start;gap:.75rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:.875rem 1rem;width:140px;flex-direction:column;}
+.dark .rw-step{background:#1e293b;border-color:#334155;}
+.rw-step-num{width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,#3b82f6,#6366f1);color:#fff;font-size:.7rem;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.rw-step-label{font-size:.8125rem;font-weight:600;color:#374151;margin:0;}
+.dark .rw-step-label{color:#e2e8f0;}
+.rw-step-desc{font-size:.75rem;color:#9ca3af;margin:0;}
+</style>
 
-    <div class="flex flex-col items-center gap-4 p-8 text-center">
-        <div class="flex h-14 w-14 items-center justify-center rounded-xl bg-primary-50 dark:bg-primary-950">
-            <x-heroicon-o-calendar-days class="h-7 w-7 text-primary-600 dark:text-primary-400"/>
+    <div class="rw-empty">
+        <div class="rw-empty-hero">
+            <div class="rw-empty-icon-wrap">
+                <x-heroicon-o-calendar-days style="width:40px;height:40px;color:#fff;"/>
+            </div>
+            <div style="text-align:center;">
+                <p class="rw-empty-title">Bienvenue sur Resa</p>
+                <p class="rw-empty-sub" style="margin-top:.5rem;">Configurez votre espace de réservation en 2 étapes pour accéder au calendrier.</p>
+            </div>
         </div>
-        <div>
-            <p class="text-base font-bold text-gray-900 dark:text-white mb-1">Réservations</p>
-            <p class="text-sm text-gray-500 dark:text-gray-400">Configurez votre lieu, unité et type de réservation.</p>
+
+        <div class="rw-steps">
+            <div class="rw-step">
+                <div class="rw-step-num">1</div>
+                <p class="rw-step-label">Lieu & Unité</p>
+                <p class="rw-step-desc">Choisissez votre site et unité</p>
+            </div>
+            <div class="rw-step">
+                <div class="rw-step-num">2</div>
+                <p class="rw-step-label">Type</p>
+                <p class="rw-step-desc">Salle, drone ou ressource</p>
+            </div>
         </div>
-        <x-filament::button wire:click="mountAction('configurer')" icon="heroicon-o-adjustments-horizontal">
-            Configurer
+
+        <x-filament::button
+            wire:click="mountAction('configurer')"
+            icon="heroicon-o-adjustments-horizontal"
+            size="lg"
+            style="background:linear-gradient(135deg,#3b82f6,#6366f1);border:none;padding:.75rem 2rem;font-size:1rem;box-shadow:0 4px 14px rgba(99,102,241,.4);">
+            Commencer la configuration
         </x-filament::button>
     </div>
 

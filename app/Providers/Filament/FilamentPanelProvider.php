@@ -2,7 +2,7 @@
 
 namespace Modules\Resa\Providers\Filament;
 
-use Filament\Pages\Dashboard;
+use Modules\Resa\Filament\Pages\ResaDashboard;
 use Filament\Support\Enums\Width;
 use Modules\Resa\Filament\Widgets\CalendrierWidget;
 use Modules\Resa\Filament\Widgets\LoginModalWidget;
@@ -61,12 +61,13 @@ class FilamentPanelProvider extends PanelProvider
             ->discoverResources(in: module_path($this->module, 'app/Filament/Resources'), for: "$moduleNamespace\\Filament\\Resources")
             ->discoverPages(in: module_path($this->module, 'app/Filament/Pages'), for: "$moduleNamespace\\Filament\\Pages")
             ->pages([
-                Dashboard::class,
+                ResaDashboard::class,
             ])
             ->discoverWidgets(in: module_path($this->module, 'app/Filament/Widgets'), for: "$moduleNamespace\\Filament\\Widgets")
             ->widgets([
                 LoginModalWidget::class,
                 \Modules\Resa\Filament\Widgets\ReservationWidget::class,
+                //\Modules\Resa\Filament\Widgets\SuiviFormationsWidget::class,
                 //PanelSwitcher::class,
                 #Widgets\AccountWidget::class,
                 #Widgets\FilamentInfoWidget::class,

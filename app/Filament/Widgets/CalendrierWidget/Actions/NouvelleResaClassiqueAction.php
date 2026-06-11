@@ -6,6 +6,7 @@ use App\Models\AnnuaireUser;
 use App\Models\User;
 use Filament\Actions\Action;
 use Filament\Forms\Components\DateTimePicker;
+use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -32,7 +33,7 @@ class NouvelleResaClassiqueAction
                 $form->fill([
                     'debut'         => $widget->etapeDebut ?? now()->setTime(8, 0)->toDateTimeString(),
                     'fin'           => $widget->etapeFin   ?? now()->setTime(9, 0)->toDateTimeString(),
-                    'user_id'       => auth()->id(),
+                    'participants'  => [['user_id' => auth()->id()]],
                     'libelle_court' => null,
                     'libelle_long'  => null,
                 ]);
@@ -74,8 +75,17 @@ class NouvelleResaClassiqueAction
                     return;
                 }
 
+                $participants = collect($data['participants'] ?? [])
+                    ->pluck('user_id')
+                    ->filter()
+                    ->unique()
+                    ->values()
+                    ->toArray();
+
+                $userId = $participants[0] ?? auth()->id();
+
                 Reservation::create([
-                    'user_id'             => $data['user_id'] ?? auth()->id(),
+                    'user_id'             => $userId,
                     'salle_poste_id'      => $poste->id,
                     'libelle_court'       => $data['libelle_court'],
                     'libelle_long'        => $data['libelle_long'] ?? null,
@@ -85,6 +95,7 @@ class NouvelleResaClassiqueAction
                     'validation'          => $widget->adminMode ? Reservation::VALIDE : Reservation::EN_ATTENTE,
                     'validated_by'        => $widget->adminMode ? auth()->id() : null,
                     'validated_at'        => $widget->adminMode ? now()         : null,
+                    'data'                => ['users' => $participants],
                 ]);
 
                 $widget->etapeDebut = null;
@@ -162,13 +173,15 @@ class NouvelleResaClassiqueAction
 
     private static function etape2(object $widget): Step
     {
-        $isIntradef = config('skeletor.reseau_de_deploiement') === 'intradef';
+        $isIntradef  = config('skeletor.reseau_de_deploiement') === 'intradef';
+        $capacite    = Salle::find($widget->salleActive)?->capacite ?? 1;
+        $capacite    = max(1, (int) $capacite);
 
         return Step::make('Informations')
             ->icon('heroicon-o-pencil-square')
             ->schema([
                 TextEntry::make('recap_creneau')
-                    ->label('Creneau')
+                    ->label('Créneau')
                     ->getStateUsing(function () use ($widget) {
                         if (! $widget->etapeDebut) return '—';
                         return \Carbon\Carbon::parse($widget->etapeDebut)->format('d/m/Y H:i')
@@ -176,26 +189,39 @@ class NouvelleResaClassiqueAction
                             . \Carbon\Carbon::parse($widget->etapeFin)->format('H:i');
                     }),
 
-                Select::make('user_id')
-                    ->label('Réservation pour')
-                    ->options(fn () => User::orderBy('nom')->get()->mapWithKeys(fn ($u) => [$u->id => trim("{$u->nom} {$u->prenom}")]))
-                    ->searchable()
-                    ->required()
-                    ->default(auth()->id())
+                TextEntry::make('capacite_label')
+                    ->label('Capacité')
+                    ->getStateUsing(fn () => $capacite . ' personne(s) maximum')
                     ->columnSpanFull(),
 
-                ...($isIntradef ? [
-                    Actions::make([self::annuaireAction()])->columnSpanFull(),
-                ] : []),
+                Repeater::make('participants')
+                    ->label('Participants')
+                    ->addActionLabel('Ajouter un participant')
+                    ->minItems(1)
+                    ->maxItems($capacite)
+                    ->reorderable(false)
+                    ->schema([
+                        Select::make('user_id')
+                            ->label('Personne')
+                            ->options(fn () => User::orderBy('nom')->get()->mapWithKeys(fn ($u) => [$u->id => trim("{$u->nom} {$u->prenom}")]))
+                            ->searchable()
+                            ->nullable()
+                            ->columnSpanFull(),
+
+                        ...($isIntradef ? [
+                            Actions::make([self::annuaireAction()])->columnSpanFull(),
+                        ] : []),
+                    ])
+                    ->columnSpanFull(),
 
                 TextInput::make('libelle_court')
-                    ->label('Intitule de la reservation')
+                    ->label('Intitulé de la réservation')
                     ->required()
                     ->maxLength(500)
                     ->columnSpanFull(),
 
                 Textarea::make('libelle_long')
-                    ->label('Informations complementaires')
+                    ->label('Informations complémentaires')
                     ->rows(3)
                     ->columnSpanFull(),
             ]);

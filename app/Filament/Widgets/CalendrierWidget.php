@@ -207,19 +207,18 @@ class CalendrierWidget extends CalendarWidget
         $query = Salle::query();
 
         if ($this->uniteActive) {
-            $query->where(fn ($q) => $q
-                ->where('unite_id', $this->uniteActive)
-                ->orWhereNull('unite_id')
-            );
+            $query->where('unite_id', $this->uniteActive);
         } elseif ($this->lieuActive) {
             $uniteIds = Unite::where('lieu_unite_id', $this->lieuActive)->pluck('id');
             $query->whereIn('unite_id', $uniteIds);
         }
 
-        // Filtrer par mode (classique/simulateur) quand forcé depuis le parent
-        if ($this->modeForce !== null && $this->typeSalleActive === null) {
+        // modeForce prend toujours la priorité (contrainte externe du parent)
+        if ($this->modeForce !== null) {
             $typeIds = TypeSalle::where('mode', $this->modeForce)->pluck('id');
             $query->whereIn('type_salle_id', $typeIds);
+        } elseif ($this->typeSalleActive !== null) {
+            $query->where('type_salle_id', $this->typeSalleActive);
         }
 
         return $query;
@@ -423,9 +422,11 @@ class CalendrierWidget extends CalendarWidget
             );
         } elseif ($this->uniteActive) {
             $sallesQuery = Salle::where('unite_id', $this->uniteActive);
-            if ($this->modeForce !== null && $this->typeSalleActive === null) {
+            if ($this->modeForce !== null) {
                 $typeIds = TypeSalle::where('mode', $this->modeForce)->pluck('id');
                 $sallesQuery->whereIn('type_salle_id', $typeIds);
+            } elseif ($this->typeSalleActive !== null) {
+                $sallesQuery->where('type_salle_id', $this->typeSalleActive);
             }
             $salleIds = $sallesQuery->pluck('id');
             $query->whereHas('sallePoste', fn ($q) =>
@@ -553,12 +554,10 @@ class CalendrierWidget extends CalendarWidget
         }
 
         if (! auth()->check()) {
-            // $actions[] = Action::make('login')
-            //     ->label('Se connecter pour reserver')
-            //     ->color('primary')
-            //     ->icon('heroicon-o-arrow-right-end-on-rectangle')
-            //     ->url(route('login'));
-            // return $actions;
+            // Pas de boutons de création — l'utilisateur peut voir mais pas réserver
+            // VoirReservationAction reste pour l'eventClick sur les réservations existantes
+            $actions[] = VoirReservationAction::make($this);
+            return $actions;
         }
 
         if ($this->etapeNavigation === 'calendrier') {
@@ -583,7 +582,10 @@ class CalendrierWidget extends CalendarWidget
 
     protected function onDateClick(DateClickInfo $info): void
     {
-        if (! $this->canUserReserve()) return;
+        if (! $this->canUserReserve()) {
+            $this->dispatch('openLoginModal');
+            return;
+        }
         if ($info->date->isWeekend()) return;
 
         $debut = $info->date->copy()->setTime(max(8, $info->date->hour), 0);
@@ -602,7 +604,10 @@ class CalendrierWidget extends CalendarWidget
 
     protected function onDateSelect(DateSelectInfo $info): void
     {
-        if (! $this->canUserReserve()) return;
+        if (! $this->canUserReserve()) {
+            $this->dispatch('openLoginModal');
+            return;
+        }
         if ($info->start->isWeekend() || $info->end->isWeekend()) return;
 
         $this->etapeDebut        = $info->start->toDateTimeString();
@@ -627,6 +632,8 @@ class CalendrierWidget extends CalendarWidget
 
     protected function onEventDrop(EventDropInfo $info, Model $event): bool
     {
+        if (! auth()->check()) return false;
+
         $record = $info->record;
 
         if ($record->isValide() && ! $this->adminMode) return false;
@@ -645,6 +652,8 @@ class CalendrierWidget extends CalendarWidget
 
     public function onEventResize(EventResizeInfo $info, Model $event): bool
     {
+        if (! auth()->check()) return false;
+
         $record = $info->record;
 
         if ($record->isValide() && ! $this->adminMode) return false;

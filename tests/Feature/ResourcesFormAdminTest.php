@@ -42,6 +42,7 @@ beforeEach(function () {
 
     Permission::findOrCreate('resa::admin', 'web');
     Permission::findOrCreate('resa::reservation.view', 'web');
+    Permission::findOrCreate('resa::reservation.view', 'web');
 
     $this->admin = User::factory()->create(['admin' => 1]);
     $this->admin->givePermissionTo('resa::admin');
@@ -461,7 +462,7 @@ describe('ReservationResource — formulaires', function () {
             ->test(CreateReservation::class)
             ->fillForm([
                 'libelle_court'  => '',
-                'user_id'        => null,
+                'participants'   => [],
                 'salle_poste_id' => null,
                 'debut'          => null,
                 'fin'            => null,
@@ -469,7 +470,6 @@ describe('ReservationResource — formulaires', function () {
             ->call('create')
             ->assertHasFormErrors([
                 'libelle_court'  => 'required',
-                'user_id'        => 'required',
                 'salle_poste_id' => 'required',
                 'debut'          => 'required',
                 'fin'            => 'required',

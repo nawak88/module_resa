@@ -95,8 +95,9 @@ class Reservation extends Model implements Eventable
 
     public function toCalendarEvent(): CalendarEvent
     {
+        // ── Couleur formation ────────────────────────────────────────────────
         $formationColor = null;
-        if ($this->isValide() && ! empty($this->formations_utilisees)) {
+        if (! empty($this->formations_utilisees)) {
             $couleur = Formation::whereIn('id', $this->formations_utilisees)->value('couleur');
             $formationColor = match ($couleur) {
                 'primary'   => '#6366f1',
@@ -113,7 +114,7 @@ class Reservation extends Model implements Eventable
             ? ($formationColor ?? '#22c55e')
             : '#9ca3af';
 
-        // Label formations pour affichage enrichi
+        // ── Label formations ─────────────────────────────────────────────────
         $capacitesLabel = '';
         if (! empty($this->formations_utilisees)) {
             $capacitesLabel = Formation::whereIn('id', $this->formations_utilisees)
@@ -122,25 +123,36 @@ class Reservation extends Model implements Eventable
                 ->join(', ');
         }
 
-        $isAdmin      = auth()->user()?->can('resa::reservation.view') ?? false;
+        // ── Noms des utilisateurs (si connecté) ──────────────────────────────
+        $isConnecte   = auth()->check();
         $isSimulateur = ! empty($this->formations_utilisees);
 
-        $poste = $this->sallePoste?->libelle_court ?? '';
-        $nom   = $isAdmin ? ($this->user?->nom ?? '') : '';
-
-        if ($isSimulateur) {
-            $lignes = array_filter([
-                $capacitesLabel ?: ($this->libelle_court ?? ''),
-                $nom ? '👤 ' . $nom : '',
-            ]);
-        } else {
-            $heures = ($this->debut?->format('H:i') ?? '') . ' — ' . ($this->fin?->format('H:i') ?? '');
-            $lignes = array_filter([
-                $heures,
-                $this->libelle_court ?? '',
-                $nom ? '👤 ' . $nom : '',
-            ]);
+        $nomsUsers = [];
+        if ($isConnecte) {
+            // Tous les user IDs : data.users en priorité, sinon user_id seul
+            $userIds = collect($this->data['users'] ?? [])->filter()->values();
+            if ($userIds->isEmpty() && $this->user_id) {
+                $userIds = collect([$this->user_id]);
+            }
+            if ($userIds->isNotEmpty()) {
+                $nomsUsers = \App\Models\User::whereIn('id', $userIds)
+                    ->get()
+                    ->map(fn ($u) => trim("{$u->nom} {$u->prenom}"))
+                    ->filter()
+                    ->values()
+                    ->toArray();
+            }
         }
+
+        // ── Titre affiché ────────────────────────────────────────────────────
+        $labelTitre = $isSimulateur
+            ? ($capacitesLabel ?: ($this->libelle_court ?? ''))
+            : ($this->libelle_court ?? '');
+
+        $lignes = array_filter([
+            $labelTitre,
+            ...array_map(fn ($n) => '👤 ' . $n, $nomsUsers),
+        ]);
 
         return CalendarEvent::make($this)
             ->title(implode("\n", $lignes))
@@ -151,7 +163,7 @@ class Reservation extends Model implements Eventable
             ->extendedProp('validation', $this->validation)
             ->extendedProp('description', $this->libelle_long)
             ->extendedProp('formations', $this->formations_utilisees ?? [])
-            ->extendedProp('nom', $this->user?->nom ?? '')
+            ->extendedProp('noms', $nomsUsers)
             ->extendedProp('capacites_label', $capacitesLabel)
             ->extendedProp('poste', $this->sallePoste?->libelle_court ?? '')
             ->extendedProp('heure_debut', $this->debut?->format('H:i') ?? '')

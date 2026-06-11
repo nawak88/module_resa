@@ -7,13 +7,14 @@ use Filament\Actions\Concerns\InteractsWithActions;
 use Filament\Actions\Contracts\HasActions;
 use Filament\Forms\Components\Radio;
 use Filament\Forms\Components\Select;
-use Filament\Schemas\Components\Wizard;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
 use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Widgets\Widget;
 use Modules\RH\Models\LieuUnite;
 use Modules\RH\Models\Unite;
+use Modules\Resa\Models\Ressource;
 use Modules\Resa\Models\Salle;
 use Modules\Resa\Models\TypeSalle;
 
@@ -43,7 +44,7 @@ class ReservationWidget extends Widget implements HasActions, HasForms
         $this->typeResa    = session('resa_nav_type', '');
     }
 
-    // ─── Wizard ───────────────────────────────────────────────────────────────
+    // ─── Modal configuration (étape unique, tout réactif) ────────────────────
 
     public function configurerAction(): Action
     {
@@ -54,43 +55,30 @@ class ReservationWidget extends Widget implements HasActions, HasForms
             ->modalWidth('lg')
             ->modalSubmitActionLabel('Valider')
             ->schema([
-                Wizard::make([
+                Select::make('lieu_id')
+                    ->label('Lieu')
+                    ->options(fn () => $this->optionsLieux())
+                    ->required()
+                    ->live()
+                    ->afterStateUpdated(fn (Set $set) => $set('unite_id', null) & $set('type_resa', null))
+                    ->default($this->lieuActive),
 
-                    Wizard\Step::make('Lieu & Unité')
-                        ->icon('heroicon-o-map-pin')
-                        ->description('Choisir le site et l\'unité')
-                        ->schema([
-                            Select::make('lieu_id')
-                                ->label('Lieu')
-                                ->options(fn () => $this->optionsLieux())
-                                ->required()
-                                ->live()
-                                ->default($this->lieuActive),
-                            Select::make('unite_id')
-                                ->label('Unité')
-                                ->options(fn (Get $get) => $this->optionsUnites($get('lieu_id')))
-                                ->required()
-                                ->live()
-                                ->default($this->uniteActive),
-                        ]),
+                Select::make('unite_id')
+                    ->label('Unité')
+                    ->options(fn (Get $get) => $this->optionsUnites($get('lieu_id')))
+                    ->required()
+                    ->live()
+                    ->afterStateUpdated(fn (Set $set) => $set('type_resa', null))
+                    ->default($this->uniteActive),
 
-                    Wizard\Step::make('Type')
-                        ->icon('heroicon-o-squares-2x2')
-                        ->description('Type de ressource')
-                        ->schema([
-                            Radio::make('type_resa')
-                                ->label('Que souhaitez-vous réserver ?')
-                                ->options([
-                                    'salle'     => '🏫  Salle classique — réunion, formation, auditorium',
-                                    'drone'     => '🚁  Simulateur de drone — simulateurs de vol',
-                                    'ressource' => '📦  Ressources matérielles — matériels et équipements',
-                                ])
-                                ->required()
-                                ->inline(false)
-                                ->default($this->typeResa ?: 'salle'),
-                        ]),
-
-                ])->skippable(false),
+                Radio::make('type_resa')
+                    ->label('Type de réservation')
+                    ->options(fn (Get $get) => $this->optionsTypes($get('unite_id')))
+                    ->required()
+                    ->inline(false)
+                    ->default($this->typeResa ?: null)
+                    ->visible(fn (Get $get) => (bool) $get('unite_id'))
+                    ->live(),
             ])
             ->action(function (array $data): void {
                 $this->lieuActive  = (int) $data['lieu_id'];
@@ -130,10 +118,33 @@ class ReservationWidget extends Widget implements HasActions, HasForms
     public function getTypeLabel(): string
     {
         return match ($this->typeResa) {
-            'drone'     => '🚁 Simulateur de drone',
-            'ressource' => '📦 Ressources',
-            default     => '🏫 Salle classique',
+            'drone'     => ' Simulateur de drone',
+            'ressource' => ' Ressources',
+            default     => ' Salle classique',
         };
+    }
+
+    private function optionsTypes(?int $uniteId): array
+    {
+        if (! $uniteId) return [];
+
+        $options = [];
+
+        $salles = Salle::where('unite_id', $uniteId)->with('typeSalle')->get();
+
+        if ($salles->filter(fn ($s) => $s->typeSalle?->mode === TypeSalle::MODE_CLASSIQUE)->isNotEmpty()) {
+            $options['salle'] = '  Salle classique — réunion, formation, cours';
+        }
+
+        if ($salles->filter(fn ($s) => $s->typeSalle?->mode === TypeSalle::MODE_SIMULATEUR)->isNotEmpty()) {
+            $options['drone'] = '  Salle Simulateur : Formations Ordinateurs';
+        }
+
+        if (Ressource::where('unite_id', $uniteId)->where('actif', true)->exists()) {
+            $options['ressource'] = '  Ressources matérielles — matériels et équipements';
+        }
+
+        return $options;
     }
 
     private function optionsLieux(): array

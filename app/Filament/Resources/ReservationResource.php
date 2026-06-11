@@ -29,8 +29,10 @@ use Modules\Resa\Filament\Resources\ReservationResource\Pages\ListReservations;
 use Modules\Resa\Models\Reservation;
 use Modules\Resa\Models\Salle;
 use Modules\Resa\Models\SallePoste;
+use Modules\Resa\Models\TypeSalle;
 use Modules\Resa\Models\Formation;
 use App\Models\User;
+use Filament\Forms\Components\Repeater;
 
 class ReservationResource extends Resource
 {
@@ -58,46 +60,29 @@ class ReservationResource extends Resource
         return $schema->components([
 
             Grid::make(2)->schema([
+
                 TextInput::make('libelle_court')
-                    ->label('Intitule de la reservation')
+                    ->label('Intitulé de la réservation')
                     ->required()
                     ->maxLength(500)
                     ->columnSpanFull(),
 
-                Select::make('user_id')
-                    ->label('Stagiaire 1')
-                    ->options(fn () => User::orderBy('nom')->pluck('nom', 'id'))
-                    ->searchable()
-                    ->required()
-                    ->default(auth()->id()),
-
-                Select::make('data.users.1')
-                    ->label('Stagiaire 2')
-                    ->options(fn () => User::orderBy('nom')->pluck('nom', 'id'))
-                    ->searchable()
-                    ->nullable()
-                    ->visible(function ($get) {
-                        $posteId = $get('salle_poste_id');
-                        if (! $posteId) return false;
-                        $poste = SallePoste::find($posteId);
-                        $formations = $poste?->formations ?? collect();
-                        return $formations->max('nb_users_par_poste') >= 2;
-                    }),
-
                 Select::make('salle_poste_id')
-                    ->label('Poste')
+                    ->label('Poste / Salle')
                     ->options(function () {
                         return SallePoste::with('salle')
                             ->get()
-                            ->mapWithKeys(fn ($poste) =>
-                                [$poste->id => $poste->salle->libelle_court . ' — ' . $poste->libelle_court]
+                            ->mapWithKeys(fn ($p) =>
+                                [$p->id => ($p->salle?->libelle_court ?? '?') . ' — ' . $p->libelle_court]
                             );
                     })
                     ->searchable()
-                    ->required(),
+                    ->required()
+                    ->live()
+                    ->columnSpanFull(),
 
                 DateTimePicker::make('debut')
-                    ->label('Date debut')
+                    ->label('Date début')
                     ->required()
                     ->seconds(false),
 
@@ -107,14 +92,44 @@ class ReservationResource extends Resource
                     ->seconds(false)
                     ->after('debut'),
 
-                CheckboxList::make('formations_utilisees')
-                    ->label('Formations utilisees')
-                    ->options(Formation::orderBy('ordre')->pluck('libelle_court', 'id'))
-                    ->columns(3)
+                // ── Participants (tous types de salles) ──────────────────────
+                Repeater::make('participants')
+                    ->label('Participants')
+                    ->addActionLabel('Ajouter un participant')
+                    ->reorderable(false)
+                    ->minItems(1)
+                    ->maxItems(function ($get) {
+                        $posteId = $get('salle_poste_id');
+                        if (! $posteId) return 50;
+                        $salle = SallePoste::find($posteId)?->salle;
+                        return max(1, (int) ($salle?->capacite ?? 50));
+                    })
+                    ->default(fn () => [['user_id' => auth()->id()]])
+                    ->schema([
+                        Select::make('user_id')
+                            ->label('Personne')
+                            ->options(fn () => User::orderBy('nom')->get()->mapWithKeys(fn ($u) => [$u->id => trim("{$u->nom} {$u->prenom}")]))
+                            ->searchable()
+                            ->nullable()
+                            ->columnSpanFull(),
+                    ])
                     ->columnSpanFull(),
 
+                // ── Formations (simulateur drone uniquement) ─────────────────
+                CheckboxList::make('formations_utilisees')
+                    ->label('Formations utilisées')
+                    ->options(Formation::orderBy('ordre')->pluck('libelle_court', 'id'))
+                    ->columns(3)
+                    ->columnSpanFull()
+                    ->visible(function ($get) {
+                        $posteId = $get('salle_poste_id');
+                        if (! $posteId) return false;
+                        $salle = SallePoste::find($posteId)?->salle;
+                        return $salle?->typeSalle?->mode === TypeSalle::MODE_SIMULATEUR;
+                    }),
+
                 Textarea::make('libelle_long')
-                    ->label('Informations complementaires')
+                    ->label('Informations complémentaires')
                     ->rows(3)
                     ->columnSpanFull(),
             ]),
@@ -133,18 +148,27 @@ class ReservationResource extends Resource
                     ->searchable()
                     ->limit(40),
 
-                TextColumn::make('user.nom')
-                    ->label('Stagiaire 1')
-                    ->searchable()
-                    ->sortable(),
-
-                TextColumn::make('stagiaire_2')
-                    ->label('Stagiaire 2')
+                TextColumn::make('participants_label')
+                    ->label('Participants')
                     ->getStateUsing(function (Reservation $record): string {
-                        $user2Id = $record->data['users'][1] ?? null;
-                        if (! $user2Id) return '—';
-                        return \App\Models\User::find($user2Id)?->nom ?? '—';
-                    }),
+                        $userIds = $record->data['users'] ?? [];
+                        if (empty($userIds) && $record->user_id) {
+                            $userIds = [$record->user_id];
+                        }
+                        if (empty($userIds)) return '—';
+                        return User::whereIn('id', $userIds)
+                            ->get()
+                            ->map(fn ($u) => trim("{$u->nom} {$u->prenom}"))
+                            ->filter()
+                            ->join(', ') ?: '—';
+                    })
+                    ->searchable(query: fn (Builder $query, string $search) =>
+                        $query->whereHas('user', fn ($q) =>
+                            $q->where('nom', 'like', "%{$search}%")
+                              ->orWhere('prenom', 'like', "%{$search}%")
+                        )
+                    )
+                    ->wrap(),
 
                 TextColumn::make('sallePoste.salle.libelle_court')
                     ->label('Salle')

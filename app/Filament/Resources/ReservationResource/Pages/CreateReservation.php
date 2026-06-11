@@ -12,6 +12,18 @@ class CreateReservation extends CreateRecord
 
     protected function mutateFormDataBeforeCreate(array $data): array
     {
+        // Résoudre participants → user_id + data.users
+        $participants = collect($data['participants'] ?? [])
+            ->pluck('user_id')->filter()->unique()->values()->toArray();
+
+        if (! empty($participants)) {
+            $data['user_id'] = $participants[0];
+            $data['data']    = array_merge($data['data'] ?? [], ['users' => $participants]);
+        } elseif (empty($data['user_id'])) {
+            $data['user_id'] = auth()->id();
+        }
+        unset($data['participants']);
+
         $user = auth()->user();
 
         $valideDirectement = $user?->can('resa::admin');

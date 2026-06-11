@@ -11,6 +11,7 @@ use Filament\Forms\Contracts\HasForms;
 use Filament\Notifications\Notification;
 use Filament\Widgets\Widget;
 use Illuminate\Support\Facades\Auth;
+use Livewire\Attributes\On;
 
 class LoginModalWidget extends Widget implements HasActions, HasForms
 {
@@ -29,6 +30,12 @@ class LoginModalWidget extends Widget implements HasActions, HasForms
     public function mount(): void
     {
         $this->pageUrl = url()->current();
+    }
+
+    #[On('openLoginModal')]
+    public function openLogin(): void
+    {
+        $this->mountAction('login');
     }
 
     public static function canView(): bool
