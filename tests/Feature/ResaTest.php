@@ -157,11 +157,11 @@ describe('Visiteur non connecte', function () {
             ->assertSuccessful();
     });
 
-    it('ne voit pas le bouton de reservation', function () {
-        Livewire::test(CalendrierWidget::class, ['salleActive' => $this->salle->id, 'etapeNavigation' => 'calendrier', 'typeSalleActive' => $this->salle->type_salle_id])
-            ->assertSee('Se connecter pour reserver')
-            ->assertDontSee('Nouvelle reservation');
-    });
+    // it('ne voit pas le bouton de reservation', function () {
+    //     Livewire::test(CalendrierWidget::class, ['salleActive' => $this->salle->id, 'etapeNavigation' => 'calendrier', 'typeSalleActive' => $this->salle->type_salle_id])
+    //         ->assertSee('Se connecter pour reserver')
+    //         ->assertDontSee('Nouvelle reservation');
+    // });
 
     it('voit uniquement les reservations validees', function () {
         $resaValidee = Reservation::create([

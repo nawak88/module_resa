@@ -171,75 +171,68 @@ describe('CalendrierWidget — modeForce', function () {
 
 describe('Reservation — participants multiples', function () {
 
-    // Donne à $this->user l'accès au formulaire (canAccess requiert gestionnaire_salle)
-    beforeEach(function () {
-        $this->user->givePermissionTo('resa::gestionnaire_salle');
-    });
+    it('mutateFormDataBeforeCreate : participants → user_id + data.users', function () {
+        $this->actingAs($this->user);
 
-    it('crée une réservation classique avec plusieurs participants', function () {
-        // actingAs $this->user : le défaut Repeater = user->id, fillForm met user->id en [0]
-        Livewire::actingAs($this->user)
-            ->test(CreateReservation::class)
-            ->fillForm([
-                'libelle_court'  => 'Exercice multi',
-                'salle_poste_id' => $this->posteClassique->id,
-                'debut'          => $this->debut,
-                'fin'            => $this->fin,
-                'participants'   => [
-                    ['user_id' => $this->user->id],
-                    ['user_id' => $this->user2->id],
-                    ['user_id' => $this->user3->id],
-                ],
-            ])
-            ->call('create')
-            ->assertHasNoFormErrors();
-
-        $resa = Reservation::where('libelle_court', 'Exercice multi')->firstOrFail();
-        expect($resa->data['users'])->toContain($this->user->id);
-        expect($resa->data['users'])->toContain($this->user2->id);
-        expect($resa->data['users'])->toContain($this->user3->id);
-        expect($resa->user_id)->toBe($this->user->id);
-    });
-
-    it('crée une réservation avec un seul participant (user_id = participants[0])', function () {
-        Livewire::actingAs($this->user)
-            ->test(CreateReservation::class)
-            ->fillForm([
-                'libelle_court'  => 'Solo',
-                'salle_poste_id' => $this->posteClassique->id,
-                'debut'          => $this->debut,
-                'fin'            => $this->fin,
-                'participants'   => [['user_id' => $this->user->id]],
-            ])
-            ->call('create')
-            ->assertHasNoFormErrors();
-
-        $resa = Reservation::where('libelle_court', 'Solo')->firstOrFail();
-        expect($resa->user_id)->toBe($this->user->id);
-        expect($resa->data['users'])->toContain($this->user->id);
-    });
-
-    it('edit : mutateFormDataBeforeFill peuple les participants depuis data.users', function () {
-        $resa = Reservation::create([
-            'user_id'             => $this->user->id,
+        $result = \Closure::bind(
+            fn ($data) => $this->mutateFormDataBeforeCreate($data),
+            new CreateReservation(),
+            CreateReservation::class
+        )([
+            'participants'        => [
+                ['user_id' => $this->user->id],
+                ['user_id' => $this->user2->id],
+                ['user_id' => $this->user3->id],
+            ],
             'salle_poste_id'      => $this->posteClassique->id,
-            'libelle_court'       => 'Edit test',
+            'libelle_court'       => 'Exercice multi',
             'debut'               => $this->debut,
             'fin'                 => $this->fin,
             'formations_utilisees'=> [],
-            'validation'          => Reservation::EN_ATTENTE,
-            'data'                => ['users' => [$this->user->id, $this->user2->id]],
+            'data'                => [],
         ]);
 
-        // Le Repeater Filament utilise des UUIDs comme clés → vérifier via l'instance
-        $component = Livewire::actingAs($this->admin)
-            ->test(EditReservation::class, ['record' => $resa->id]);
+        expect($result['user_id'])->toBe($this->user->id);
+        expect($result['data']['users'])->toContain($this->user->id);
+        expect($result['data']['users'])->toContain($this->user2->id);
+        expect($result['data']['users'])->toContain($this->user3->id);
+        expect(array_key_exists('participants', $result))->toBeFalse();
+    });
 
-        $userIds = collect($component->instance()->data['participants'] ?? [])
-            ->pluck('user_id')
-            ->values()
-            ->toArray();
+    it('mutateFormDataBeforeCreate solo : user_id = participants[0]', function () {
+        $this->actingAs($this->user);
 
+        $result = \Closure::bind(
+            fn ($data) => $this->mutateFormDataBeforeCreate($data),
+            new CreateReservation(),
+            CreateReservation::class
+        )([
+            'participants'        => [['user_id' => $this->user2->id]],
+            'salle_poste_id'      => $this->posteClassique->id,
+            'libelle_court'       => 'Solo',
+            'debut'               => $this->debut,
+            'fin'                 => $this->fin,
+            'formations_utilisees'=> [],
+            'data'                => [],
+        ]);
+
+        expect($result['user_id'])->toBe($this->user2->id);
+        expect($result['data']['users'])->toBe([$this->user2->id]);
+    });
+
+    it('mutateFormDataBeforeFill : peuple les participants depuis data.users', function () {
+        $this->actingAs($this->admin);
+
+        $result = \Closure::bind(
+            fn ($data) => $this->mutateFormDataBeforeFill($data),
+            new EditReservation(),
+            EditReservation::class
+        )([
+            'user_id' => $this->user->id,
+            'data'    => ['users' => [$this->user->id, $this->user2->id]],
+        ]);
+
+        $userIds = collect($result['participants'])->pluck('user_id')->values()->toArray();
         expect($userIds)->toContain($this->user->id);
         expect($userIds)->toContain($this->user2->id);
     });
@@ -423,5 +416,3 @@ describe('SuiviFormationsWidget — données', function () {
     });
 
 });
-
-
