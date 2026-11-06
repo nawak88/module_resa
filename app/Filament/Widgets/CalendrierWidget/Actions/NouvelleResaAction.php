@@ -19,6 +19,7 @@ use Filament\Schemas\Components\Wizard;
 use Filament\Schemas\Components\Wizard\Step;
 use Illuminate\Validation\ValidationException;
 use Modules\Resa\Models\Formation;
+use Modules\Resa\Models\FormationSousCategorie;
 use Modules\Resa\Models\Reservation;
 use Modules\Resa\Services\PosteDisponibiliteService;
 
@@ -34,7 +35,7 @@ class NouvelleResaAction
                 $form->fill([
                     'debut'             => $widget->etapeDebut ?? now()->setTime(8, 0)->toDateTimeString(),
                     'fin'               => $widget->etapeFin   ?? now()->setTime(9, 0)->toDateTimeString(),
-                    'formation_id'  => null,
+                    'formation_id'  => $widget->etapeFormations[0] ?? null,
                     'postes_attribution' => [],
                 ]);
             })
@@ -57,6 +58,17 @@ class NouvelleResaAction
                 $formationId = $widget->etapeFormations[0] ?? null;
                 $formation = $formationId ? Formation::find($formationId) : null;
 
+                // 0 ou 1 sous-catégorie : la formation se comporte "comme avant" (ses
+                // propres validation_auto/notice). 2+ : celle choisie en étape 1 prend
+                // le dessus — ex. "FPV" > "Entraînement" (auto-validé) vs "Examen"
+                // (validation_auto false, reste en attente d'un gestionnaire).
+                $sousCategories = $formation?->sousCategories ?? collect();
+                $sousCategorie = match (true) {
+                    $sousCategories->count() === 1 => $sousCategories->first(),
+                    $sousCategories->count() >= 2  => FormationSousCategorie::find($data['sous_categorie_id'] ?? null),
+                    default                         => null,
+                };
+
                 $postesSelectionnes = array_filter($postes, fn ($l) => ! empty($l['selectionne']) && ! empty($l['user_1_id']));
 
                 if (empty($postesSelectionnes)) {
@@ -67,18 +79,27 @@ class NouvelleResaAction
                     return;
                 }
 
+                if (! $widget->adminMode && \Carbon\Carbon::parse($widget->etapeDebut)->lt(now())) {
+                    Notification::make()->title('Impossible de reserver un creneau deja passe.')->danger()->send();
+                    return;
+                }
+
+                $valideDirectement = $widget->adminMode || (bool) $formation?->validationAuto($sousCategorie);
+
                 foreach ($postesSelectionnes as $ligne) {
 
                     Reservation::create([
                         'user_id'             => $ligne['user_1_id'],
+                        'created_by'          => auth()->id(),
                         'salle_poste_id'      => $ligne['poste_id'],
                         'libelle_court'       => $formation?->libelle_court ?? '',
                         'debut'               => $widget->etapeDebut,
                         'fin'                 => $widget->etapeFin,
                         'formations_utilisees' => $formationId ? [(int) $formationId] : [],
-                        'validation'          => $widget->adminMode ? Reservation::VALIDE : Reservation::EN_ATTENTE,
-                        'validated_by'        => $widget->adminMode ? auth()->id() : null,
-                        'validated_at'        => $widget->adminMode ? now()         : null,
+                        'sous_categorie_id'   => $sousCategorie?->id,
+                        'validation'          => $valideDirectement ? Reservation::VALIDE : Reservation::EN_ATTENTE,
+                        'validated_by'        => $valideDirectement ? auth()->id() : null,
+                        'validated_at'        => $valideDirectement ? now()         : null,
                         'data'                => [
                             'users'            => array_values(array_filter([$ligne['user_1_id'], $ligne['user_2_id'] ?? null])),
                             'formation_id' => $formationId,
@@ -131,6 +152,17 @@ class NouvelleResaAction
                     ->label('Type de formation')
                     ->required()
                     ->options(Formation::orderBy('ordre')->pluck('libelle_court', 'id'))
+                    ->live()
+                    ->afterStateUpdated(fn ($set) => $set('sous_categorie_id', null))
+                    ->columnSpanFull(),
+
+                // Affiché seulement s'il y a un vrai choix à faire (2+ sous-catégories) :
+                // avec 0 ou 1, la formation garde son propre réglage de validation.
+                Select::make('sous_categorie_id')
+                    ->label('Sous-catégorie')
+                    ->required()
+                    ->options(fn ($get) => Formation::find($get('formation_id'))?->sousCategories->pluck('libelle_court', 'id') ?? [])
+                    ->visible(fn ($get) => (Formation::find($get('formation_id'))?->sousCategories->count() ?? 0) >= 2)
                     ->columnSpanFull(),
             ])
             ->afterValidation(function ($get, $set) use ($widget) {
@@ -349,5 +381,3 @@ class NouvelleResaAction
             });
     }
 }
-
-

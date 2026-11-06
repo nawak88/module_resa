@@ -49,9 +49,45 @@ class Salle extends Model implements Resourceable
         return $this->belongsToMany(User::class, 'resa_salle_gestionnaires', 'salle_id', 'user_id');
     }
 
+    /**
+     * Gestionnaire de la salle elle-même, OU — pour les salles simulateur, où la
+     * gestion se fait par formation plutôt que par salle (cf. SalleResource : le champ
+     * « Gestionnaires » n'est affiché que pour les salles classiques) — gestionnaire
+     * d'au moins une formation disponible sur un poste de cette salle.
+     */
     public function isGestionnaire(User $user): bool
     {
-        return $this->gestionnaires()->where('user_id', $user->id)->exists();
+        if ($this->gestionnaires()->where('user_id', $user->id)->exists()) {
+            return true;
+        }
+
+        if ($this->typeSalle?->mode !== TypeSalle::MODE_SIMULATEUR) {
+            return false;
+        }
+
+        return $this->sallePostes()
+            ->whereHas('formations.gestionnaires', fn ($q) => $q->where('user_id', $user->id))
+            ->exists();
+    }
+
+    /**
+     * IDs des salles gérées par cet utilisateur (salle directe, ou formation pour les
+     * salles simulateur). Voir isGestionnaire() pour le détail des deux cas.
+     */
+    public static function idsGereesPar(?User $user): \Illuminate\Support\Collection
+    {
+        if (! $user) {
+            return collect();
+        }
+
+        $directes = static::whereHas('gestionnaires', fn ($q) => $q->where('user_id', $user->id))->pluck('id');
+
+        $viaFormation = static::whereHas(
+            'sallePostes.formations.gestionnaires',
+            fn ($q) => $q->where('user_id', $user->id),
+        )->pluck('id');
+
+        return $directes->merge($viaFormation)->unique()->values();
     }
 
     public function sallePostes(): HasMany
@@ -76,5 +112,3 @@ class Salle extends Model implements Resourceable
             ->title($this->libelle_court ?? '');
     }
 }
-
-

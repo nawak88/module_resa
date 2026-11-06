@@ -3,8 +3,10 @@
 namespace Modules\Resa\Filament\Widgets;
 
 use Filament\Actions\Action;
+use Livewire\Attributes\On;
 use Guava\Calendar\Enums\CalendarViewType;
 use Guava\Calendar\Filament\CalendarWidget;
+use Guava\Calendar\ValueObjects\CalendarResource;
 use Guava\Calendar\ValueObjects\DateClickInfo;
 use Guava\Calendar\ValueObjects\DateSelectInfo;
 use Guava\Calendar\ValueObjects\EventClickInfo;
@@ -50,6 +52,10 @@ class CalendrierWidget extends CalendarWidget
     public bool    $skipTypeSalleNav = false;
     public ?string $modeForce        = null;  // 'classique' | 'simulateur' — forcé depuis le parent
 
+    // Mode "formation" : calendrier transversal (toutes salles) filtré par formation,
+    // utilisé par le dashboard du gestionnaire de formation (SuiviFormationsWidget).
+    public bool $modeFormationGlobale = false;
+
     // Etat modal
     public bool    $adminMode      = false;
     public ?int    $recordEnCours  = null;
@@ -74,11 +80,27 @@ class CalendrierWidget extends CalendarWidget
 
     public function mount(): void
     {
+        if ($this->modeFormationGlobale) {
+            // Vue transversale toutes salles, filtrée par formation(s) via $filtreFormations :
+            // pas de navigation lieu/unité/salle ; les colonnes (postes) sont résolues dans
+            // getResources() à partir des salles qui ont des réservations pour ces formations.
+            $this->adminMode  = true;
+            $this->etapeNavigation = 'calendrier';
+
+            return;
+        }
+
         $user = auth()->user();
         $this->adminMode = $user?->can('resa::reservation.view') ?? false;
 
         // Un gestionnaire de salle a aussi accès au mode admin pour sa salle
         if (!$this->adminMode && $user?->can('resa::gestionnaire_salle')) {
+            $this->adminMode = true;
+        }
+
+        // Un gestionnaire de formation (type de capacité) doit voir les réservations
+        // en attente qui utilisent sa formation, pour pouvoir les valider.
+        if (!$this->adminMode && $user?->can('resa::gestionnaire_formation')) {
             $this->adminMode = true;
         }
 
@@ -341,6 +363,19 @@ class CalendrierWidget extends CalendarWidget
         return auth()->check();
     }
 
+    /**
+     * Vrai administrateur (voit et modifie tout), à distinguer de $adminMode qui vaut
+     * aussi true pour un simple gestionnaire de salle/formation — celui-ci voit toutes
+     * les réservations (cf. getEvents()) mais ne doit pouvoir modifier/supprimer que
+     * les siennes, cf. VoirReservationAction::footerActions().
+     */
+    public function estAdminComplet(): bool
+    {
+        $user = auth()->user();
+
+        return ($user?->can('resa::admin') ?? false) || ($user?->can('resa::reservation.view') ?? false);
+    }
+
     /* ── Helpers publics ──────────────────────────────────────────────────── */
 
     public function validerCreneauPublic(string $debut, string $fin, ?int $excludeId = null): ?string
@@ -349,7 +384,7 @@ class CalendrierWidget extends CalendarWidget
         $f = \Carbon\Carbon::parse($fin);
 
         if ($d->isWeekend()) return 'Reservation impossible le week-end.';
-        if ($d->copy()->startOfDay()->lt(now()->startOfDay())) return 'Impossible de reserver dans le passe.';
+        if ($d->lt(now())) return 'Impossible de reserver un creneau deja passe.';
         if ($f->lte($d)) return 'La date de fin doit etre superieure a la date de debut.';
 
         $debutMin = $d->hour * 60 + $d->minute;
@@ -383,6 +418,10 @@ class CalendrierWidget extends CalendarWidget
 
     public function getResources(): Collection|array
     {
+        if ($this->modeFormationGlobale) {
+            return $this->getResourcesFormationGlobale();
+        }
+
         // Mode classique : pas de colonnes
         if ($this->isModeClassique()) return [];
 
@@ -393,6 +432,54 @@ class CalendrierWidget extends CalendarWidget
             ->where('libelle_court', '!=', 'Salle entiere') // exclut le poste fictif
             ->orderBy('ordre')
             ->get();
+    }
+
+    /**
+     * Colonnes du calendrier transversal "formation" : un poste par poste configuré
+     * pour au moins une des formations filtrées (relation SallePoste::formations),
+     * avec la salle dans le libellé pour lever l'ambiguïté quand plusieurs salles
+     * sont concernées. Basé sur la configuration des postes, pas sur l'historique des
+     * réservations : sinon une formation sans réservation n'affiche aucune colonne
+     * même si des postes lui sont bien rattachés (voir SallePosteForm — CheckboxList
+     * « Formations disponibles sur ce poste »).
+     */
+    /** IDs des salles dont au moins un poste est configuré pour une des formations filtrées. */
+    private function sallesFormationGlobale(): \Illuminate\Support\Collection
+    {
+        if (empty($this->filtreFormations)) return collect();
+
+        return SallePoste::query()
+            ->whereHas('formations', fn ($q) => $q->whereIn('resa_formations.id', $this->filtreFormations))
+            ->pluck('salle_id')
+            ->unique()
+            ->values();
+    }
+
+    private function getResourcesFormationGlobale(): Collection
+    {
+        if (empty($this->filtreFormations)) return collect();
+
+        // Tous les postes des salles concernées, pas seulement ceux configurés pour la
+        // formation filtrée : le gestionnaire doit voir l'occupation complète de la
+        // salle (autres formations y compris), même s'il ne peut valider/modifier que
+        // ce qui relève de la sienne (cf. getEvents() et ReservationPolicy::valider()).
+        $postes = SallePoste::query()
+            ->where('libelle_court', '!=', 'Salle entiere') // exclut le poste fictif
+            ->whereIn('salle_id', $this->sallesFormationGlobale())
+            ->with('salle')
+            ->orderBy('salle_id')
+            ->orderBy('ordre')
+            ->get();
+
+        $plusieursSalles = $postes->pluck('salle_id')->unique()->count() > 1;
+
+        return $postes->map(function (SallePoste $poste) use ($plusieursSalles) {
+            $titre = $plusieursSalles
+                ? trim(($poste->salle?->libelle_court ?? '') . ' — ' . $poste->libelle_court)
+                : $poste->libelle_court;
+
+            return \Guava\Calendar\ValueObjects\CalendarResource::make($poste->id)->title($titre ?? '');
+        });
     }
 
     /* ── Evenements ───────────────────────────────────────────────────────── */
@@ -416,7 +503,16 @@ class CalendrierWidget extends CalendarWidget
             $query->where('validation', Reservation::VALIDE);
         }
 
-        if ($this->salleActive) {
+        if ($this->modeFormationGlobale) {
+            // Le gestionnaire voit toute l'occupation des salles concernées par ses
+            // formations — y compris les réservations d'autres formations — mais ne
+            // peut valider/modifier que ce qui relève de la sienne (ReservationPolicy,
+            // VoirReservationAction::footerActions()). Donc pas de filtre JSON par
+            // formation ici (cf. plus bas), seulement un scope par salle.
+            $query->whereHas('sallePoste', fn ($q) =>
+                $q->whereIn('salle_id', $this->sallesFormationGlobale())
+            );
+        } elseif ($this->salleActive) {
             $query->whereHas('sallePoste', fn ($q) =>
                 $q->where('salle_id', $this->salleActive)
             );
@@ -438,7 +534,7 @@ class CalendrierWidget extends CalendarWidget
             $query->whereIn('salle_poste_id', $this->filtrePostes);
         }
 
-        if (! empty($this->filtreFormations)) {
+        if (! empty($this->filtreFormations) && ! $this->modeFormationGlobale) {
             $query->where(function ($q) {
                 foreach ($this->filtreFormations as $id) {
                     $q->orWhereJsonContains('formations_utilisees', (int) $id)
@@ -561,15 +657,28 @@ class CalendrierWidget extends CalendarWidget
         }
 
         if ($this->etapeNavigation === 'calendrier') {
-            // Filtres uniquement en mode simulateur
-            if ($this->isModeSimulateur()) {
+            // Filtres uniquement en mode simulateur, hors vue transversale : son filtre
+            // "Postes" dépend d'une salle active unique (absente ici, plusieurs salles
+            // mélangées) et son filtre "Formations" est volontairement ignoré dans ce
+            // mode (cf. getEvents()) pour montrer aussi les autres formations — inutile
+            // d'afficher un bouton de filtre qui ne filtre rien.
+            if ($this->isModeSimulateur() && ! $this->modeFormationGlobale) {
                 $actions[] = FiltresAction::make($this);
             }
 
-            // Wizard selon le mode
-            $actions[] = $this->isModeClassique()
-                ? NouvelleResaClassiqueAction::make($this)
-                : NouvelleResaAction::make($this);
+            // Wizard selon le mode. En vue transversale (dashboard gestionnaire de
+            // formation), il n'y a pas de salle active unique au niveau du bouton
+            // d'en-tête : on ne l'ajoute donc pas ici (pas de bouton dans la barre
+            // d'outils). L'action reste toutefois mountable via nouvelle_resaAction()
+            // (cf. plus bas) — ne PAS utiliser ->hidden() ici : une action masquée est
+            // aussi considérée comme désactivée par Filament (isDisabled() s'appuie sur
+            // isHidden()), ce qui empêche mountAction() de l'ouvrir, y compris depuis un
+            // clic sur une colonne du calendrier ou le bouton dédié du dashboard.
+            if (! $this->modeFormationGlobale) {
+                $actions[] = $this->isModeClassique()
+                    ? NouvelleResaClassiqueAction::make($this)
+                    : NouvelleResaAction::make($this);
+            }
 
             // Action cachee voir reservation
             $actions[] = VoirReservationAction::make($this);
@@ -578,10 +687,26 @@ class CalendrierWidget extends CalendarWidget
         return $actions;
     }
 
+    /**
+     * Permet à mountAction('nouvelle_resa') de résoudre l'action même quand elle n'est
+     * pas enregistrée dans getHeaderActions() (vue transversale modeFormationGlobale,
+     * où il n'y a pas de bouton dans la barre d'outils) : Filament retombe sur une
+     * méthode {nom}Action() quand le nom n'est pas trouvé dans les actions mises en
+     * cache. Hors vue transversale, l'action est déjà en cache via getHeaderActions()
+     * donc cette méthode n'est utilisée que comme filet de sécurité.
+     */
+    public function nouvelle_resaAction(): Action
+    {
+        return $this->isModeClassique()
+            ? NouvelleResaClassiqueAction::make($this)
+            : NouvelleResaAction::make($this);
+    }
+
     /* ── DateClick ────────────────────────────────────────────────────────── */
 
     protected function onDateClick(DateClickInfo $info): void
     {
+        if ($this->modeFormationGlobale && ! $this->resoudreSalleDepuisResource($info->resource)) return;
         if (! $this->canUserReserve()) {
             $this->dispatch('openLoginModal');
             return;
@@ -600,10 +725,60 @@ class CalendrierWidget extends CalendarWidget
         $this->mountAction('nouvelle_resa');
     }
 
+    /**
+     * Vue transversale (modeFormationGlobale) : il n'y a pas de salle active unique,
+     * chaque colonne du calendrier est un poste rattaché à une salle différente. On
+     * déduit donc la salle à utiliser pour la création du poste/colonne cliqué(e) ;
+     * sans colonne identifiable (ex. clic hors zone resource), impossible de créer.
+     */
+    private function resoudreSalleDepuisResource(?CalendarResource $resource): bool
+    {
+        if (! $resource) return false;
+
+        $poste = SallePoste::find($resource->getId());
+        if (! $poste || ! $poste->salle_id) return false;
+
+        $this->salleActive     = $poste->salle_id;
+        $this->typeSalleActive = $poste->salle?->type_salle_id;
+        $this->_modeActifCache = null;
+
+        return true;
+    }
+
+    /**
+     * Déclenché par SuiviFormationsWidget::ouvrirNouvelleReservation() : bouton explicite
+     * côté gestionnaire pour créer une réservation sans dépendre d'un clic sur une case
+     * du calendrier transversal (qui n'est pas toujours évident à trouver/cliquer).
+     */
+    #[On('resa-ouvrir-nouvelle-reservation')]
+    public function ouvrirNouvelleReservationDepuisBouton(int $salleId, ?int $formationId = null): void
+    {
+        if (! $this->modeFormationGlobale) return;
+
+        $salle = Salle::find($salleId);
+        if (! $salle) return;
+
+        $this->salleActive     = $salle->id;
+        $this->typeSalleActive = $salle->type_salle_id;
+        $this->_modeActifCache = null;
+
+        $debut = now()->addDay()->setTime(9, 0);
+        if ($debut->isWeekend()) $debut = $debut->next(\Carbon\Carbon::MONDAY)->setTime(9, 0);
+
+        $this->etapeDebut        = $debut->toDateTimeString();
+        $this->etapeFin          = $debut->copy()->addHour()->toDateTimeString();
+        $this->etapeFormations    = $formationId ? [$formationId] : [];
+        $this->etapePoste        = null;
+        $this->postesDisponibles = [];
+
+        $this->mountAction('nouvelle_resa');
+    }
+
     /* ── DateSelect ───────────────────────────────────────────────────────── */
 
     protected function onDateSelect(DateSelectInfo $info): void
     {
+        if ($this->modeFormationGlobale && ! $this->resoudreSalleDepuisResource($info->resource)) return;
         if (! $this->canUserReserve()) {
             $this->dispatch('openLoginModal');
             return;
@@ -667,5 +842,3 @@ class CalendrierWidget extends CalendarWidget
         return true;
     }
 }
-
-

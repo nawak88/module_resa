@@ -4,6 +4,7 @@ namespace Modules\Resa\Filament\Resources\TypeCapacites;
 
 use  Modules\Resa\Models\Formation;
 use BackedEnum;
+use Illuminate\Database\Eloquent\Builder;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
@@ -20,7 +21,7 @@ class TypeCapaciteResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
     protected static string|\UnitEnum|null $navigationGroup = 'Gestion';
-    protected static ?int                    $navigationSort  = 5;
+    protected static ?int                    $navigationSort  = 7;
 
     //protected static ?string $recordTitleAttribute = 'TypeCapacite';
     // protected static ?string $recordTitleAttribute = 'libelle_court'; 
@@ -33,6 +34,19 @@ class TypeCapaciteResource extends Resource
     public static function table(Table $table): Table
     {
         return TypeCapacitesTable::configure($table);
+    }
+
+    public static function getEloquentQuery(): Builder
+    {
+        $user  = auth()->user();
+        $query = parent::getEloquentQuery();
+
+        if ($user?->can('resa::admin') || $user?->can('resa::formation.index')) {
+            return $query;
+        }
+
+        // Gestionnaire de formation : uniquement les formations qu'il gère.
+        return $query->whereHas('gestionnaires', fn ($q) => $q->where('user_id', $user?->id));
     }
 
     public static function getRelations(): array
@@ -51,5 +65,3 @@ class TypeCapaciteResource extends Resource
         ];
     }
 }
-
-

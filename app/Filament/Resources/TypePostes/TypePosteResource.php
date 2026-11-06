@@ -20,7 +20,7 @@ class TypePosteResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
     protected static string|\UnitEnum|null $navigationGroup = 'Gestion';
-    protected static ?int                    $navigationSort  = 5;
+    protected static ?int                    $navigationSort  = 6;
 
     //protected static ?string $recordTitleAttribute = 'TypePoste';
     // protected static ?string $recordTitleAttribute = 'libelle_court';

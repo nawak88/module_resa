@@ -10,6 +10,7 @@ use Modules\Resa\Database\Seeders\ResaDatabaseSeeder;
 use Modules\Resa\Filament\Resources\ReservationResource\Pages\CreateReservation;
 use Modules\Resa\Filament\Widgets\CalendrierWidget;
 use Modules\Resa\Filament\Widgets\RessourceGanttWidget;
+use Modules\Resa\Filament\Widgets\RessourceGanttWidget\Actions\NouvelleResaAction;
 use Modules\Resa\Models\Reservation;
 use Modules\Resa\Models\Ressource;
 use Modules\Resa\Models\RessourceCategorie;
@@ -163,11 +164,8 @@ describe('RessourceGanttWidget : protection auth', function () {
     it('creerReservation() ne crée rien si non connecté', function () {
         $widget = new RessourceGanttWidget();
 
-        $creer = \Closure::bind(
-            fn (array $data) => $this->creerReservation($data),
-            $widget,
-            RessourceGanttWidget::class
-        );
+        $creer = fn (array $data) => (new ReflectionMethod(NouvelleResaAction::class, 'creerReservation'))
+            ->invoke(null, $widget, $data);
 
         $creer([
             'ressource_id' => $this->ressource->id,
@@ -185,11 +183,8 @@ describe('RessourceGanttWidget : protection auth', function () {
         $widget            = new RessourceGanttWidget();
         $widget->adminMode = false;
 
-        $creer = \Closure::bind(
-            fn (array $data) => $this->creerReservation($data),
-            $widget,
-            RessourceGanttWidget::class
-        );
+        $creer = fn (array $data) => (new ReflectionMethod(NouvelleResaAction::class, 'creerReservation'))
+            ->invoke(null, $widget, $data);
 
         $creer([
             'ressource_id' => $this->ressource->id,
@@ -210,11 +205,8 @@ describe('RessourceGanttWidget : protection auth', function () {
         $widget            = new RessourceGanttWidget();
         $widget->adminMode = true;
 
-        $creer = \Closure::bind(
-            fn (array $data) => $this->creerReservation($data),
-            $widget,
-            RessourceGanttWidget::class
-        );
+        $creer = fn (array $data) => (new ReflectionMethod(NouvelleResaAction::class, 'creerReservation'))
+            ->invoke(null, $widget, $data);
 
         $creer([
             'ressource_id' => $this->ressource->id,
@@ -243,11 +235,8 @@ describe('RessourceGanttWidget : protection auth', function () {
         $widget            = new RessourceGanttWidget();
         $widget->adminMode = false;
 
-        $creer = \Closure::bind(
-            fn (array $data) => $this->creerReservation($data),
-            $widget,
-            RessourceGanttWidget::class
-        );
+        $creer = fn (array $data) => (new ReflectionMethod(NouvelleResaAction::class, 'creerReservation'))
+            ->invoke(null, $widget, $data);
 
         $creer([
             'ressource_id' => $this->ressource->id,
@@ -505,5 +494,3 @@ describe('CreateReservation : auto-validation gestionnaire de salle', function (
         expect($result['validation'] ?? Reservation::EN_ATTENTE)->toBe(Reservation::EN_ATTENTE);
     });
 });
-
-

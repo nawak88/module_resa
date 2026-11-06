@@ -3,6 +3,7 @@
 namespace Modules\Resa\Filament\Widgets\CalendrierWidget\Actions;
 
 use Filament\Actions\Action;
+use Filament\Forms\Components\DateTimePicker;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Grid;
 use Filament\Infolists\Components\TextEntry;
@@ -100,6 +101,40 @@ class VoirReservationAction
             && ($widget->adminMode || auth()->id() === $record->user_id);
 
         if ($canModify) {
+            $actions[] = Action::make('go_modifier_horaires')
+                ->label('Modifier horaires')
+                ->color('gray')
+                ->icon('heroicon-o-pencil-square')
+                ->schema([
+                    DateTimePicker::make('debut')
+                        ->label('Date debut')
+                        ->required()
+                        ->seconds(false)
+                        ->default($record->debut),
+
+                    DateTimePicker::make('fin')
+                        ->label('Date fin')
+                        ->required()
+                        ->seconds(false)
+                        ->after('debut')
+                        ->default($record->fin),
+                ])
+                ->action(function (array $data) use ($record, $widget): void {
+                    $erreur = $widget->validerCreneauPublic($data['debut'], $data['fin'], $record->id);
+                    if ($erreur) {
+                        Notification::make()->title($erreur)->danger()->send();
+                        return;
+                    }
+
+                    $record->update([
+                        'debut' => $data['debut'],
+                        'fin'   => $data['fin'],
+                    ]);
+
+                    $widget->refreshRecords();
+                    Notification::make()->title('Horaires modifies')->success()->send();
+                });
+
             $actions[] = Action::make('go_supprimer')
                 ->label('Supprimer')
                 ->color('danger')
@@ -135,6 +170,3 @@ class VoirReservationAction
         return $actions;
     }
 }
-
-
-

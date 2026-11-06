@@ -37,7 +37,7 @@ class SalleResource extends Resource
 
     protected static string | \BackedEnum | null $navigationIcon = 'heroicon-o-rectangle-stack';
     protected static string|\UnitEnum|null $navigationGroup = 'Gestion';
-    protected static ?int                    $navigationSort  = 2;
+    protected static ?int                    $navigationSort  = 3;
 
     public static function form(Schema $schema): Schema
     {
@@ -47,7 +47,8 @@ class SalleResource extends Resource
                     ->label('Type de salle')
                     ->options(TypeSalle::orderBy('ordre')->pluck('libelle_court', 'id'))
                     ->required()
-                    ->native(false),
+                    ->native(false)
+                    ->live(),
 
                 Select::make('lieu_unite_id')
                     ->label('Lieu')
@@ -104,7 +105,19 @@ class SalleResource extends Resource
                 TextInput::make('capacite')
                     ->numeric()
                     ->minValue(1),
-              
+                \Modules\Resa\Filament\Components\EmailListField::make('email')
+                    ->visible(fn ($get) => TypeSalle::find($get('type_salle_id'))?->mode === TypeSalle::MODE_CLASSIQUE),
+                Select::make('gestionnaires')
+                    ->label('Gestionnaires')
+                    ->relationship('gestionnaires', 'nom')
+                    ->multiple()
+                    ->searchable()
+                    ->preload()
+                    ->helperText('Ces utilisateurs peuvent gérer cette salle et valider ses réservations.')
+                    ->columnSpanFull()
+                    // Pour une salle simulateur, la gestion se fait par formation (Resa > Formations),
+                    // pas par salle : éviter de devoir assigner le gestionnaire à deux endroits.
+                    ->visible(fn ($get) => TypeSalle::find($get('type_salle_id'))?->mode === TypeSalle::MODE_CLASSIQUE),
             ]);
 
     }
@@ -116,7 +129,10 @@ class SalleResource extends Resource
             ->reorderable('ordre') 
             ->defaultPaginationPageOption(25) 
             ->columns([
-                
+                TextColumn::make('typeSalle.libelle_court')
+                    ->label('Type de salle')
+                    ->sortable()
+                    ->badge(),
                 TextColumn::make('unite.lieuUnite.libelle_court')
                     ->label('Lieu')
                     ->sortable()
@@ -159,6 +175,9 @@ class SalleResource extends Resource
                     ? $query->whereHas('unite', fn ($q) => $q->where('lieu_unite_id', $data['value']))
                     : $query
                 ),
+            SelectFilter::make('type_salle_id')
+                ->label('Type de salle')
+                ->options(TypeSalle::orderBy('ordre')->pluck('libelle_court', 'id')),
         ])
         ->recordActions([
             EditAction::make(),
@@ -186,5 +205,3 @@ class SalleResource extends Resource
         ];
     }
 }
-
-

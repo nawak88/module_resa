@@ -66,6 +66,7 @@ class ResaServiceProvider extends ServiceProvider
             Models\TypeSalle::class => Policies\TypeSallePolicy::class,
             Models\Formation::class => Policies\FormationPolicy::class,
             Models\PosteFormation::class => Policies\PosteCapacitePolicy::class,
+            Models\RessourceReservation::class => Policies\RessourceReservationPolicy::class,
         ];
 
         foreach ($policies as $model => $policy) {
@@ -196,5 +197,3 @@ class ResaServiceProvider extends ServiceProvider
 
     }
 }
-
-

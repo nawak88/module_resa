@@ -68,15 +68,16 @@ Un gestionnaire peut être assigné à plusieurs salles. Une salle peut avoir pl
 
 ---
 
-## Configurer l'email de notification d'une salle
+## Configurer les emails de notification (salle, formation)
 
-Quand une réservation est créée sur une salle, un email de notification est envoyé automatiquement si le champ email est renseigné.
+Quand une réservation est créée (salle classique, ou formation/type de capacité), un email de notification est envoyé automatiquement à chaque adresse renseignée.
 
-1. Aller dans **Resa > Gestion > Salles** → **Modifier**
-2. Champ **Email(s) de notification** → saisir l'adresse
-3. Pour plusieurs destinataires : `responsable@base.fr, chef@unite.fr`
+1. Aller dans **Resa > Gestion > Salles** (ou **Gestion > Type de capacité**) → **Modifier**
+2. Champ **Email(s) de notification** : tapez une adresse puis **Entrée** pour l'ajouter à la liste — chaque adresse apparaît comme une étiquette
+3. Pour retirer une adresse : cliquer sur le **×** sur son étiquette
+4. Répéter pour ajouter plusieurs destinataires
 
-Si le champ est vide ou null, aucun email n'est envoyé.
+Si la liste est vide, aucun email n'est envoyé.
 
 ---
 
@@ -196,10 +197,104 @@ Cette navigation est transparente pour l'utilisateur — les étapes inutiles so
 
 ---
 
+## Ressources (matériel réservable)
+
+En plus des salles, le module permet de réserver du **matériel** (ressources) indépendamment d'une salle : casques VR, équipements mobiles, etc. Organisées en **catégories** (ex. "Casques VR", "Équipement audio").
+
+### Consulter les ressources (mode utilisateur)
+
+1. Aller dans **Resa > Ressources** (menu de navigation, groupe **Ressources**)
+2. La page affiche un planning (Gantt) de toutes les ressources, avec leurs réservations en cours
+3. Filtrer par catégorie via le paramètre de la page (`?categorie=ID`) si proposé dans le menu
+4. Cliquer sur un créneau libre pour réserver une ressource — accessible à tout utilisateur connecté (`RessourcesPage::canAccess()` ne demande qu'une authentification)
+
+### Informations obligatoires pour réserver du matériel
+
+En plus de l'horaire et de l'objet, toute réservation de matériel doit renseigner :
+
+| Champ | Description |
+|-------|-------------|
+| Bâtiment | Lieu physique où se trouve/sera utilisé le matériel |
+| Service concerné | Service demandeur |
+| Emprunteur | Utilisateur sélectionné dans la liste — son grade est repris automatiquement depuis son dossier RH |
+| Officier responsable | Utilisateur sélectionné dans la liste — grade également repris du dossier RH |
+
+Ces informations apparaissent ensuite dans le détail de la réservation (bouton **Réservation** dans le planning).
+
+### Gérer les catégories et ressources (admin uniquement)
+
+**Catégories de ressources** — **Resa > Gestion > Catégories de ressources** (réservé à `resa::admin`) :
+
+1. **Créer** → renseigner libellé, libellé court, ordre, icône, couleur
+2. Chaque catégorie regroupe plusieurs ressources (compteur affiché dans la liste)
+3. Champ **Gestionnaires** → les utilisateurs choisis peuvent **valider/invalider** les réservations du matériel de cette catégorie, et leurs propres réservations sur cette catégorie sont **validées directement** (comme un gestionnaire de salle ou de formation)
+
+**Ressources** — **Resa > Gestion > Ressources** (réservé à `resa::admin`) :
+
+| Champ | Description |
+|-------|-------------|
+| Catégorie | Catégorie de rattachement (obligatoire) |
+| Unité | Rattachement géographique optionnel (module RH) |
+| Libellé / Libellé court | Nom affiché |
+| Ordre | Ordre d'affichage |
+| Actif | Désactive la ressource (non réservable) si décoché |
+| Statut | Disponibilité : *Disponible* / *En entretien* / *Indisponible* |
+| Description | Texte libre |
+
+### Signaler un matériel en entretien ou indisponible
+
+Contrairement au champ **Actif** (qui retire définitivement la ressource du catalogue), le champ **Statut** permet de signaler temporairement qu'un équipement n'est pas utilisable, sans le supprimer :
+
+1. **Resa > Gestion > Ressources** → modifier la ressource concernée
+2. Champ **Disponibilité** → choisir *En entretien* ou *Indisponible*
+3. Enregistrer
+
+Effets :
+
+- La ressource reste **visible** dans le planning (Gantt), avec son libellé suffixé **⚠️ En entretien** ou **⛔ Indisponible**
+- Toute tentative de réservation sur cette ressource est **bloquée**, avec un message d'erreur explicite
+- Repasser le statut sur *Disponible* rend immédiatement la ressource réservable à nouveau
+
+### Valider les réservations de matériel (admin ou gestionnaire habilité)
+
+**Resa > Gestion > Réservations matériels** (accessible avec `resa::reservation.index` ou `resa::admin`) :
+
+1. La liste affiche toutes les réservations de ressources avec statut **En attente** / **Validée**
+2. Bouton **Valider / Invalider** sur chaque ligne (réservé à `resa::admin`)
+3. Actions groupées : **Valider la sélection** / **Invalider la sélection** sur plusieurs réservations à la fois
+4. Un utilisateur standard peut supprimer uniquement ses propres réservations de matériel ; l'admin peut tout supprimer
+
+---
+
+## Résumé des 3 modes d'accès
+
+### Mode Utilisateur (connecté, sans permission particulière)
+
+- Consulte le calendrier des salles et le planning des ressources
+- Réserve une salle (Simulateur ou Classique) → en attente de validation
+- Réserve une ressource (matériel) → en attente de validation
+- Modifie / supprime uniquement ses propres réservations en attente
+
+### Mode Gestion (gestionnaire de salle — `resa::gestionnaire_salle`)
+
+- Voit et valide/invalide les réservations des **salles qui lui sont assignées** uniquement
+- Peut glisser-déposer / redimensionner les réservations de ses salles
+- Ne gère pas les catégories de ressources ni les ressources elles-mêmes (réservé au super admin)
+
+### Mode Super Admin (`resa::admin`)
+
+- Accès complet à toutes les salles, tous les postes, toutes les réservations (salles et matériel)
+- Seul profil pouvant créer/modifier des salles, types de salle, types de poste, types de capacité, catégories de ressources et ressources
+- Réserve pour un tiers (réservation directement validée, avec traçabilité `validated_by` / `validated_at`)
+- Valide/invalide en masse les réservations de matériel
+
+---
+
 ## Permissions disponibles
 
 | Permission | Description |
 |-----------|-------------|
-| `resa::admin` | Accès complet — toutes les salles et réservations |
+| `resa::admin` | Accès complet — toutes les salles, ressources et réservations |
 | `resa::reservation.view` | Voir toutes les réservations dans la liste Resource |
+| `resa::reservation.index` | Accéder à la liste des réservations de matériel |
 | `resa::gestionnaire_salle` | Gérer et valider uniquement les salles assignées |

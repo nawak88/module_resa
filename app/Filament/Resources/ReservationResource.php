@@ -320,8 +320,9 @@ class ReservationResource extends Resource
             return $query;
         }
 
-        // Gestionnaire : uniquement les réservations de ses salles
-        $salleIds = Salle::whereHas('gestionnaires', fn ($q) => $q->where('user_id', $user?->id))->pluck('id');
+        // Gestionnaire : uniquement les réservations de ses salles (directement, ou via
+        // les formations qu'il gère pour les salles simulateur — cf. Salle::idsGereesPar).
+        $salleIds = Salle::idsGereesPar($user);
 
         return $query->whereHas(
             'sallePoste',
@@ -329,5 +330,3 @@ class ReservationResource extends Resource
         );
     }
 }
-
-

@@ -67,7 +67,8 @@ class FilamentPanelProvider extends PanelProvider
             ->widgets([
                 LoginModalWidget::class,
                 \Modules\Resa\Filament\Widgets\ReservationWidget::class,
-                //\Modules\Resa\Filament\Widgets\SuiviFormationsWidget::class,
+                \Modules\Resa\Filament\Widgets\SuiviFormationsWidget::class,
+                \Modules\Resa\Filament\Widgets\MesReservationsWidget::class,
                 //PanelSwitcher::class,
                 #Widgets\AccountWidget::class,
                 #Widgets\FilamentInfoWidget::class,
@@ -112,5 +113,3 @@ class FilamentPanelProvider extends PanelProvider
         return config('modules.namespace').'\\'.$this->module;
     }
 }
-
-

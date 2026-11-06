@@ -39,7 +39,8 @@ class RessourceReservationResource extends Resource
     {
         $user = auth()->user();
         return $user?->can('resa::reservation.index')
-            || $user?->can('resa::admin');
+            || $user?->can('resa::admin')
+            || $user?->can('resa::gestionnaire_ressource');
     }
 
     public static function form(Schema $schema): Schema
@@ -148,7 +149,7 @@ class RessourceReservationResource extends Resource
                     ->color(fn (RessourceReservation $r) => $r->isValide() ? 'warning' : 'success')
                     ->iconButton()
                     ->requiresConfirmation(fn (RessourceReservation $r) => ! $r->isValide())
-                    ->visible(fn () => auth()->user()?->can('resa::admin'))
+                    ->visible(fn (RessourceReservation $r) => auth()->user()?->can('valider', $r) ?? false)
                     ->action(function (RessourceReservation $r): void {
                         $r->isValide() ? $r->invalider() : $r->valider(auth()->user());
                         Notification::make()
@@ -171,10 +172,11 @@ class RessourceReservationResource extends Resource
                         ->icon('heroicon-o-check-circle')
                         ->color('success')
                         ->requiresConfirmation()
-                        ->visible(fn () => auth()->user()?->can('resa::admin'))
+                        ->visible(fn () => auth()->user()?->can('resa::admin') || auth()->user()?->can('resa::gestionnaire_ressource'))
                         ->action(function (Collection $records): void {
-                            $records->each(fn (RessourceReservation $r) => $r->valider(auth()->user()));
-                            Notification::make()->title($records->count() . ' réservation(s) validée(s)')->success()->send();
+                            $autorisees = $records->filter(fn (RessourceReservation $r) => auth()->user()?->can('valider', $r));
+                            $autorisees->each(fn (RessourceReservation $r) => $r->valider(auth()->user()));
+                            Notification::make()->title($autorisees->count() . ' réservation(s) validée(s)')->success()->send();
                         }),
 
                     BulkAction::make('invaliderSelection')
@@ -182,10 +184,11 @@ class RessourceReservationResource extends Resource
                         ->icon('heroicon-o-x-circle')
                         ->color('warning')
                         ->requiresConfirmation()
-                        ->visible(fn () => auth()->user()?->can('resa::admin'))
+                        ->visible(fn () => auth()->user()?->can('resa::admin') || auth()->user()?->can('resa::gestionnaire_ressource'))
                         ->action(function (Collection $records): void {
-                            $records->each(fn (RessourceReservation $r) => $r->invalider());
-                            Notification::make()->title($records->count() . ' réservation(s) invalidée(s)')->warning()->send();
+                            $autorisees = $records->filter(fn (RessourceReservation $r) => auth()->user()?->can('valider', $r));
+                            $autorisees->each(fn (RessourceReservation $r) => $r->invalider());
+                            Notification::make()->title($autorisees->count() . ' réservation(s) invalidée(s)')->warning()->send();
                         }),
                 ]),
             ]);
@@ -193,7 +196,16 @@ class RessourceReservationResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->with(['user', 'ressource.categorie', 'validatedBy']);
+        $query = parent::getEloquentQuery()->with(['user', 'ressource.categorie', 'validatedBy']);
+
+        $user = auth()->user();
+        $estAdminComplet = $user?->can('resa::admin') || $user?->can('resa::reservation.index');
+
+        if ($user && !$estAdminComplet && $user->can('resa::gestionnaire_ressource')) {
+            $query->whereHas('ressource.categorie.gestionnaires', fn ($q) => $q->where('user_id', $user->id));
+        }
+
+        return $query;
     }
 
     public static function getPages(): array

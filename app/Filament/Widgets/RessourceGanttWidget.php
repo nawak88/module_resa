@@ -2,15 +2,6 @@
 
 namespace Modules\Resa\Filament\Widgets;
 
-use Filament\Actions\Action;
-use Filament\Forms\Components\DateTimePicker;
-use Filament\Forms\Components\Placeholder;
-use Filament\Forms\Components\TextInput;
-use Illuminate\Support\Facades\Auth as LaravelAuth;
-use Filament\Forms\Components\Textarea;
-use Filament\Infolists\Components\TextEntry;
-use Filament\Notifications\Notification;
-use Filament\Schemas\Components\Grid;
 use Guava\Calendar\Enums\CalendarViewType;
 use Guava\Calendar\Filament\CalendarWidget;
 use Guava\Calendar\ValueObjects\DateSelectInfo;
@@ -21,6 +12,9 @@ use Guava\Calendar\ValueObjects\FetchInfo;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
+use Modules\Resa\Filament\Widgets\RessourceGanttWidget\Actions\NouvelleResaAction;
+use Modules\Resa\Filament\Widgets\RessourceGanttWidget\Actions\SeConnecterAction;
+use Modules\Resa\Filament\Widgets\RessourceGanttWidget\Actions\VoirResaAction;
 use Modules\RH\Models\LieuUnite;
 use Modules\RH\Models\Unite;
 use Modules\Resa\Models\Ressource;
@@ -153,10 +147,18 @@ class RessourceGanttWidget extends CalendarWidget
     public function getResourcesJs(): array
     {
         return $this->getResources()
-            ->map(fn (Ressource $r) => \Guava\Calendar\ValueObjects\CalendarResource::make($r->id)
-                ->title($r->nom)
-                ->toCalendarObject()
-            )
+            ->map(function (Ressource $r) {
+                $titre = $r->nom;
+                $titre .= match ($r->statut) {
+                    Ressource::STATUT_ENTRETIEN     => ' ⚠️ En entretien',
+                    Ressource::STATUT_INDISPONIBLE => ' ⛔ Indisponible',
+                    default                         => '',
+                };
+
+                return \Guava\Calendar\ValueObjects\CalendarResource::make($r->id)
+                    ->title($titre)
+                    ->toCalendarObject();
+            })
             ->toArray();
     }
 
@@ -207,16 +209,27 @@ class RessourceGanttWidget extends CalendarWidget
 
         $ressourceIds = $this->getResources()->pluck('id');
 
+        // Catégories dont l'utilisateur est gestionnaire : il voit aussi les réservations
+        // en attente du matériel de ces catégories, qu'il n'a pas lui-même créées.
+        $user = auth()->user();
+        $categorieIdsGerees = ($user && $user->can('resa::gestionnaire_ressource'))
+            ? \Modules\Resa\Models\RessourceCategorie::whereHas('gestionnaires', fn ($q) => $q->where('user_id', $user->id))->pluck('id')
+            : collect();
+
         return RessourceReservation::query()
             ->with(['user', 'ressource'])
             ->whereIn('ressource_id', $ressourceIds)
             ->where('debut', '<', $info->end)
             ->where('fin',   '>', $info->start)
             ->when(! $this->adminMode, fn ($q) =>
-                $q->where(fn ($q2) => $q2
-                    ->where('validation', RessourceReservation::VALIDE)
-                    ->orWhere('user_id', auth()->id())
-                )
+                $q->where(function ($q2) use ($categorieIdsGerees) {
+                    $q2->where('validation', RessourceReservation::VALIDE)
+                        ->orWhere('user_id', auth()->id());
+
+                    if ($categorieIdsGerees->isNotEmpty()) {
+                        $q2->orWhereHas('ressource', fn ($q3) => $q3->whereIn('ressource_categorie_id', $categorieIdsGerees));
+                    }
+                })
             );
     }
 
@@ -312,126 +325,17 @@ class RessourceGanttWidget extends CalendarWidget
 
     public function getHeaderActions(): array
     {
-        $actions = [];
-
-        if ($this->etape === 'gantt' && $this->filtreUnite) {
-            // $actions[] = Action::make('retourUnites')
-            //     ->label('Changer d\'unité')
-            //     ->color('gray')
-            //     ->icon('heroicon-o-arrow-left')
-            //     ->action(fn () => $this->retourUnites());
-        }
-
-        if ($this->etape === 'gantt') {
-            if (auth()->check()) {
-                $actions[] = Action::make('nouvelleResa')
-                    ->label('Nouvelle réservation')
-                    ->icon('heroicon-o-plus')
-                    ->color('primary')
-                    ->schema($this->getNouvelleResaForm())
-                    ->action(fn (array $data) => $this->creerReservation($data))
-                    ->fillForm(fn () => [
-                        'ressource_id' => $this->newRessourceId,
-                        'debut'        => $this->newDebut,
-                        'fin'          => $this->newFin,
-                    ]);
-            }
-
-            $actions[] = Action::make('voirResa')
-                ->label('Réservation')
-                ->icon('heroicon-o-eye')
-                ->color('gray')
-                ->extraAttributes(['style' => 'display:none'])
-                ->modalHeading(fn () => $this->viewingId
-                    ? (RessourceReservation::find($this->viewingId)?->ressource?->nom ?? 'Réservation')
-                    : 'Réservation'
-                )
-                ->modalSubmitAction(false)
-                ->schema(fn (): array => $this->getVoirResaForm())
-                ->extraModalFooterActions(fn (): array => $this->getVoirResaFooterActions())
-                ->action(fn () => null);
-        }
-
-        return $actions;
-    }
-
-    /* ── Form création ────────────────────────────────────────────────────── */
-
-    private function getNouvelleResaForm(): array
-    {
-        $ressources = $this->getResources();
+        if ($this->etape !== 'gantt') return [];
 
         return [
-            \Filament\Forms\Components\Select::make('ressource_id')
-                ->label('Ressource')
-                ->options($ressources->pluck('nom', 'id'))
-                ->required()
-                ->searchable(),
-
-            DateTimePicker::make('debut')
-                ->label('Début')
-                ->required()
-                ->seconds(false),
-
-            DateTimePicker::make('fin')
-                ->label('Fin')
-                ->required()
-                ->seconds(false)
-                ->after('debut'),
-
-            Textarea::make('libelle')
-                ->label('Objet')
-                ->rows(2),
+            NouvelleResaAction::make($this),
+            VoirResaAction::make($this),
         ];
     }
 
-    public function seConnecterAction(): Action
+    public function seConnecterAction(): \Filament\Actions\Action
     {
-        $ssoName = match (config('skeletor.reseau_de_deploiement')) {
-            'sic21'  => 'POLARIS Online',
-            default  => 'Mindef Connect',
-        };
-
-        $pageUrl = url()->current();
-
-        return Action::make('seConnecter')
-            ->label('Connexion')
-            ->modalHeading('Connexion')
-            ->modalSubmitActionLabel('Connexion locale')
-            ->modalWidth('sm')
-            ->schema([
-                Placeholder::make('sso_block')
-                    ->label('')
-                    ->content(new \Illuminate\Support\HtmlString(
-                        '<button type="button" wire:click="redirectSso" class="inline-flex items-center justify-center gap-2 w-full rounded-lg border border-primary-600 px-4 py-2.5 text-sm font-semibold text-primary-700 hover:bg-primary-50 dark:border-primary-400 dark:text-primary-400 dark:hover:bg-primary-950">'
-                        . '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/></svg>'
-                        . 'Se connecter via ' . e($ssoName)
-                        . '</button>'
-                        . '<div class="my-4 flex items-center gap-3"><div class="flex-1 border-t border-gray-200 dark:border-gray-700"></div><span class="text-xs font-medium text-gray-400">OU</span><div class="flex-1 border-t border-gray-200 dark:border-gray-700"></div></div>'
-                    )),
-                TextInput::make('email')
-                    ->label('E-mail')
-                    ->email()
-                    ->required()
-                    ->autofocus(),
-                TextInput::make('password')
-                    ->label('Mot de passe')
-                    ->password()
-                    ->revealable()
-                    ->required(),
-            ])
-            ->action(function (array $data) use ($pageUrl): void {
-                if (LaravelAuth::attempt(['email' => $data['email'], 'password' => $data['password']])) {
-                    session()->regenerate();
-                    $this->redirect($pageUrl);
-                } else {
-                    \Filament\Notifications\Notification::make()
-                        ->title('Identifiants incorrects')
-                        ->body('Email ou mot de passe invalide.')
-                        ->danger()
-                        ->send();
-                }
-            });
+        return SeConnecterAction::make($this);
     }
 
     public function redirectSso(): void
@@ -439,125 +343,4 @@ class RessourceGanttWidget extends CalendarWidget
         session()->put('login_redirect_after', url()->current());
         $this->redirect(route('keycloak.login.redirect'));
     }
-
-    private function creerReservation(array $data): void
-    {
-        if (! auth()->check()) return;
-
-        // Vérifier conflit
-        $conflit = RessourceReservation::where('ressource_id', $data['ressource_id'])
-            ->where('debut', '<', $data['fin'])
-            ->where('fin',   '>', $data['debut'])
-            ->exists();
-
-        if ($conflit) {
-            Notification::make()->title('Conflit de réservation')
-                ->body('Cette ressource est déjà réservée sur ce créneau.')
-                ->danger()->send();
-            return;
-        }
-
-        RessourceReservation::create([
-            'user_id'      => auth()->id(),
-            'ressource_id' => $data['ressource_id'],
-            'libelle'      => $data['libelle'] ?? null,
-            'debut'        => $data['debut'],
-            'fin'          => $data['fin'],
-            'validation'   => $this->adminMode ? RessourceReservation::VALIDE : RessourceReservation::EN_ATTENTE,
-            'validated_by' => $this->adminMode ? auth()->id() : null,
-            'validated_at' => $this->adminMode ? now() : null,
-        ]);
-
-        $this->refreshRecords();
-        $this->newDebut = $this->newFin = null;
-        $this->newRessourceId = null;
-    }
-
-    /* ── Form voir réservation ────────────────────────────────────────────── */
-
-    private function getVoirResaForm(): array
-    {
-        $r = fn () => $this->viewingId
-            ? RessourceReservation::with(['ressource', 'user', 'validatedBy'])->find($this->viewingId)
-            : null;
-
-        return [
-            Grid::make(2)->schema([
-                TextEntry::make('debut_ph')
-                    ->label('Début')
-                    ->getStateUsing(fn () => $r()?->debut?->format('d/m/Y H:i') ?? '—'),
-
-                TextEntry::make('fin_ph')
-                    ->label('Fin')
-                    ->getStateUsing(fn () => $r()?->fin?->format('d/m/Y H:i') ?? '—'),
-            ]),
-
-            TextEntry::make('ressource_ph')
-                ->label('Ressource')
-                ->getStateUsing(fn () => $r()?->ressource?->nom ?? '—'),
-
-            TextEntry::make('libelle_ph')
-                ->label('Objet')
-                ->getStateUsing(fn () => $r()?->libelle ?: '(sans objet)'),
-
-            TextEntry::make('user_ph')
-                ->label('Réservé par')
-                ->getStateUsing(fn () => $r()?->user?->nom ?? '—'),
-
-            TextEntry::make('statut_ph')
-                ->label('Statut')
-                ->getStateUsing(fn () => $r()?->isValide() ? 'Validée' : 'En attente')
-                ->badge()
-                ->color(fn ($state) => $state === 'Validée' ? 'success' : 'warning'),
-
-            TextEntry::make('valide_par_ph')
-                ->label('Validée par')
-                ->visible(fn () => $this->viewingId && $r()?->isValide())
-                ->getStateUsing(fn () => ($r()?->validatedBy?->nom ?? '') . ' — ' . ($r()?->validated_at?->format('d/m/Y H:i') ?? '')),
-        ];
-    }
-
-    private function getVoirResaFooterActions(): array
-    {
-        if (! $this->viewingId) return [];
-
-        $r = RessourceReservation::find($this->viewingId);
-        if (! $r) return [];
-
-        $actions = [];
-
-        $canModify = (! $r->isValide()) && ($this->adminMode || auth()->id() === $r->user_id);
-
-        if ($canModify) {
-            $actions[] = Action::make('supprimer_resa')
-                ->label('Supprimer')
-                ->color('danger')
-                ->icon('heroicon-o-trash')
-                ->requiresConfirmation()
-                ->action(function () use ($r): void {
-                    $id = $r->id;
-                    $this->viewingId = null;
-                    RessourceReservation::destroy($id);
-                    $this->refreshRecords();
-                    Notification::make()->title('Réservation supprimée')->success()->send();
-                });
-        }
-
-        if ($this->adminMode) {
-            $actions[] = Action::make('toggle_validation')
-                ->label($r->isValide() ? 'Invalider' : 'Valider')
-                ->color($r->isValide() ? 'warning' : 'success')
-                ->icon($r->isValide() ? 'heroicon-o-x-circle' : 'heroicon-o-check-circle')
-                ->action(function () use ($r): void {
-                    $r->isValide() ? $r->invalider() : $r->valider(auth()->user());
-                    $this->refreshRecords();
-                    Notification::make()->title($r->fresh()->isValide() ? 'Validée' : 'Invalidée')->success()->send();
-                });
-        }
-
-        return $actions;
-    }
-
 }
-
-

@@ -2,7 +2,9 @@
 
 namespace Modules\Resa\Models;
 
+use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Modules\Resa\Traits\HasTablePrefix;
 
@@ -15,6 +17,16 @@ class RessourceCategorie extends Model
     public function ressources(): HasMany
     {
         return $this->hasMany(Ressource::class, 'ressource_categorie_id')->orderBy('ordre');
+    }
+
+    public function gestionnaires(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class, 'resa_ressource_categorie_gestionnaires', 'ressource_categorie_id', 'user_id');
+    }
+
+    public function isGestionnaire(User $user): bool
+    {
+        return $this->gestionnaires()->where('user_id', $user->id)->exists();
     }
 
     public function ressourcesActives(): HasMany
@@ -43,5 +55,3 @@ class RessourceCategorie extends Model
             ->get();
     }
 }
-
-

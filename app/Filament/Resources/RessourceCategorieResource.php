@@ -45,6 +45,14 @@ class RessourceCategorieResource extends Resource
                 ->label('Couleur')
                 ->options(TypeSalleForm::colorOptions())
                 ->placeholder('Choisir une couleur'),
+            Select::make('gestionnaires')
+                ->label('Gestionnaires')
+                ->relationship('gestionnaires', 'nom')
+                ->multiple()
+                ->searchable()
+                ->preload()
+                ->helperText('Ces utilisateurs peuvent valider les réservations du matériel de cette catégorie.')
+                ->columnSpanFull(),
         ]);
     }
 
@@ -76,5 +84,3 @@ class RessourceCategorieResource extends Resource
         ];
     }
 }
-
-

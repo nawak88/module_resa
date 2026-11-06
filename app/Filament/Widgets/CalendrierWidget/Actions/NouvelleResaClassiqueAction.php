@@ -86,6 +86,7 @@ class NouvelleResaClassiqueAction
 
                 Reservation::create([
                     'user_id'             => $userId,
+                    'created_by'          => auth()->id(),
                     'salle_poste_id'      => $poste->id,
                     'libelle_court'       => $data['libelle_court'],
                     'libelle_long'        => $data['libelle_long'] ?? null,
@@ -309,5 +310,3 @@ class NouvelleResaClassiqueAction
             });
     }
 }
-
-

@@ -24,7 +24,7 @@ class SallePosteResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
     protected static string|\UnitEnum|null $navigationGroup = 'Gestion';
-    protected static ?int                    $navigationSort  = 3;
+    protected static ?int                    $navigationSort  = 5;
 
   //    protected static ?string $recordTitleAttribute = 'SallePoste';
     // protected static ?string $recordTitleAttribute = 'libelle_court';  
@@ -60,8 +60,9 @@ class SallePosteResource extends Resource
             return $query;
         }
 
-        // Gestionnaire : uniquement les postes de ses salles
-        $salleIds = Salle::whereHas('gestionnaires', fn ($q) => $q->where('user_id', $user?->id))->pluck('id');
+        // Gestionnaire : uniquement les postes de ses salles (directement, ou via les
+        // formations qu'il gère pour les salles simulateur — cf. Salle::idsGereesPar).
+        $salleIds = Salle::idsGereesPar($user);
 
         return $query->whereIn('salle_id', $salleIds);
     }

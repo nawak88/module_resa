@@ -53,7 +53,16 @@ class RessourceResource extends Resource
             TextInput::make('libelle')->label('Libellé')->required()->maxLength(255),
             TextInput::make('libelle_court')->label('Libellé court')->maxLength(50),
             TextInput::make('ordre')->label('Ordre')->numeric()->default(0),
-            Toggle::make('actif')->label('Actif')->default(true),
+            Toggle::make('actif')->label('Actif')->default(true)
+                ->helperText('Décoché = retiré du catalogue (ne plus proposer du tout).'),
+
+            Select::make('statut')
+                ->label('Disponibilité')
+                ->options(Ressource::STATUTS)
+                ->default(Ressource::STATUT_DISPONIBLE)
+                ->required()
+                ->native(false)
+                ->helperText('Permet de signaler un équipement en entretien ou indisponible sans le retirer du catalogue.'),
 
             Textarea::make('description')->label('Description')->rows(3)->columnSpanFull(),
         ]);
@@ -69,6 +78,16 @@ class RessourceResource extends Resource
                 TextColumn::make('libelle')->label('Ressource')->searchable()->sortable(),
                 TextColumn::make('libelle_court')->label('Court'),
                 IconColumn::make('actif')->label('Actif')->boolean(),
+                TextColumn::make('statut')
+                    ->label('Disponibilité')
+                    ->badge()
+                    ->formatStateUsing(fn (string $state) => Ressource::STATUTS[$state] ?? $state)
+                    ->color(fn (string $state) => match ($state) {
+                        Ressource::STATUT_DISPONIBLE   => 'success',
+                        Ressource::STATUT_ENTRETIEN     => 'warning',
+                        Ressource::STATUT_INDISPONIBLE => 'danger',
+                        default                         => 'gray',
+                    }),
                 TextColumn::make('reservations_count')->label('Réservations')
                     ->counts('reservations')
                     ->badge(),
@@ -77,6 +96,9 @@ class RessourceResource extends Resource
                 SelectFilter::make('ressource_categorie_id')
                     ->label('Catégorie')
                     ->options(RessourceCategorie::orderBy('ordre')->pluck('libelle', 'id')),
+                SelectFilter::make('statut')
+                    ->label('Disponibilité')
+                    ->options(Ressource::STATUTS),
             ])
             ->recordActions([
                 EditAction::make()->iconButton(),

@@ -1,3 +1,18 @@
+## 0.0.4 (November 02, 2026)
+- Updated VERSION, Updated CHANGELOG.md, Bumped 0.0.3 –> 0.0.4
+- Merge branch 'tuleap-993859-resa-ajout-list-email-opur-la-gestion' into latest
+- Correction et amelioration pour les gestionnaires de Salles Formation, Test Unitaires
+- Modification champ Input pour voir les emails deja renseignees + delete + test unitaire
+
+## 0.0.3 (October 23, 2026)
+- Updated VERSION, Updated CHANGELOG.md, Bumped 0.0.2 –> 0.0.3
+- Gestionnaire de categories ressources (validation autonome matériel)
+- RessourceGanttWidget en 3 Actions : refactoring conmme CalendrierWidget)
+- Resssource statut :  dispo/entretien/indsipo blocage reservation
+- Gestionnaire de salle classique
+- Resa : Modification dashboard et widget  pour gestionnaire de Formation + test  + attibuation / suppression de permission isGestionnaire()
+- Implement art  #780630 : Test Unitaires OK
+
 ## 0.0.2 (June 15, 2026)
 - Updated VERSION, Updated CHANGELOG.md, Bumped 0.0.1 –> 0.0.2
 - Implements art #780630 : refonte modal pour choix salles + test unitaires + correction bug
