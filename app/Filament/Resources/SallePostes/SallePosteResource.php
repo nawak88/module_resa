@@ -48,7 +48,8 @@ class SallePosteResource extends Resource
     {
         $user = auth()->user();
         return $user?->can('resa::admin')
-            || $user?->can('resa::gestionnaire_salle');
+            || $user?->can('resa::gestionnaire_salle')
+            || $user?->can('resa::sallePoste.index');
     }
 
     public static function getEloquentQuery(): Builder
@@ -56,7 +57,7 @@ class SallePosteResource extends Resource
         $user  = auth()->user();
         $query = parent::getEloquentQuery();
 
-        if ($user?->can('resa::admin')) {
+        if ($user?->can('resa::admin') || $user?->can('resa::sallePoste.index')) {
             return $query;
         }
 
